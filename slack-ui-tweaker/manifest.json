@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "Slack UI Tweaker",
+  "short_name": "UI Tweaker",
+  "version": "1.0.0",
+  "description": "Personalizza Slack Web/PWA con un ispettore punta-e-clicca: nascondi, sfuma, compatta o rendi collassabile qualsiasi elemento.",
+  "minimum_chrome_version": "102",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://app.slack.com/*"],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "action": {
+    "default_title": "Slack UI Tweaker",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "options_ui": {
+    "page": "popup/popup.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "commands": {
+    "toggle-inspector": {
+      "suggested_key": {
+        "default": "Alt+S"
+      },
+      "description": "Attiva/disattiva la modalità Ispettore su Slack"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://app.slack.com/*"],
+      "js": [
+        "shared/constants.js",
+        "shared/dom.js",
+        "shared/storage.js",
+        "content/selector-generator.js",
+        "content/style-engine.js",
+        "content/dom-mutations.js",
+        "content/ui-shell.js",
+        "content/inspector.js",
+        "content/content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}

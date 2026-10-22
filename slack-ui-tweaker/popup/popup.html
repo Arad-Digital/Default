@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slack UI Tweaker</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <img class="logo" src="../icons/icon-48.png" alt="" width="30" height="30" />
+        <div class="title">
+          <h1>Slack UI Tweaker</h1>
+          <p id="context-line" class="subtitle">Caricamento…</p>
+        </div>
+        <label class="switch" title="Attiva o disattiva l'estensione">
+          <input id="master-toggle" type="checkbox" role="switch" aria-label="Estensione attiva" />
+          <span class="slider" aria-hidden="true"></span>
+        </label>
+      </header>
+
+      <div id="notice" class="notice" role="status" hidden></div>
+
+      <section class="primary">
+        <button id="start-inspector" class="btn btn-primary btn-block" type="button">
+          <span data-icon="target"></span>
+          <span>Punta e clicca</span>
+          <kbd id="shortcut-label">Alt+S</kbd>
+        </button>
+        <label class="check">
+          <input id="fab-toggle" type="checkbox" />
+          <span>Mostra il pulsante flottante nella pagina</span>
+        </label>
+      </section>
+
+      <section class="rules" aria-labelledby="rules-title">
+        <div class="section-head">
+          <h2 id="rules-title">Regole <span id="rule-count" class="count">0</span></h2>
+          <div class="segmented" role="group" aria-label="Filtro regole">
+            <button type="button" data-filter="current" aria-pressed="true">Vista corrente</button>
+            <button type="button" data-filter="all" aria-pressed="false">Tutte</button>
+          </div>
+        </div>
+        <ul id="rule-list" class="rule-list"></ul>
+        <div id="empty-state" class="empty" hidden>
+          <span data-icon="target"></span>
+          <p><strong>Nessuna regola qui.</strong></p>
+          <p>Avvia «Punta e clicca» su Slack e scegli un'azione per un elemento.</p>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div class="footer-row">
+          <button id="export-btn" class="btn btn-ghost" type="button"><span data-icon="download"></span>Esporta JSON</button>
+          <button id="import-btn" class="btn btn-ghost" type="button"><span data-icon="upload"></span>Importa JSON</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden />
+        </div>
+        <div class="footer-row">
+          <label class="check small">
+            <input id="import-replace" type="checkbox" />
+            <span>L'import sostituisce le regole esistenti</span>
+          </label>
+          <button id="open-tab" class="btn-link" type="button"><span data-icon="external"></span>Apri in una scheda</button>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../shared/constants.js"></script>
+    <script src="../shared/dom.js"></script>
+    <script src="../shared/storage.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
