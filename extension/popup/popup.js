@@ -332,15 +332,19 @@
     const key = notice ? notice.key : '';
     if (key === noticeKey) return;
     noticeKey = key;
+    // A new message does replace the focused button (e.g. "Ricarica" failed): keep focus off <body>.
+    const hadFocus = els.notice.contains(document.activeElement);
     els.notice.hidden = !notice;
     if (!notice) {
       els.notice.replaceChildren();
+      if (hadFocus) (els.start.disabled ? els.master : els.start).focus();
       return;
     }
     els.notice.className = `notice ${notice.tone}`;
     const children = [h('span', { class: 'notice-text' }, notice.text)];
     if (notice.action) children.push(notice.action());
     els.notice.replaceChildren(...children);
+    if (hadFocus) (els.notice.querySelector('button') || els.notice).focus();
   }
 
   function reloadButton() {
@@ -417,10 +421,16 @@
     const pick = (ruleId) => controls.get(`${ruleId}:${saved.control}`) || controls.get(`${ruleId}:switch`);
     const index = saved.order.indexOf(saved.ruleId);
     const nearby = [...saved.order.slice(index + 1), ...saved.order.slice(0, Math.max(index, 0)).reverse()];
-    let target = pick(saved.ruleId);
+    const same = pick(saved.ruleId);
+    if (same) {
+      // It took the old node's place in a list that kept its scroll position: scrolling would only jump.
+      same.focus({ preventScroll: true });
+      return;
+    }
+    let target = null;
     for (const ruleId of nearby) {
-      if (target) break;
       target = pick(ruleId);
+      if (target) break;
     }
     (target || els.rulesTitle).focus();
   }
@@ -494,16 +504,19 @@
       rule.action === 'custom' && rule.baseAction ? `CSS personalizzato (da «${C.ACTIONS[rule.baseAction].label}»)` : meta.label;
     // Same text sighted users see; the selector is too long and noisy for a control name.
     const name = rule.label || 'Senza nome';
-    const labelId = `rule-label-${rule.id}`;
+    // Labels repeat (the same element hidden globally and faded in a workspace, unnamed imports): the badge
+    // and the group heading above the card tell such rules apart, so the control names carry them too.
+    const where = rule.scope === C.GLOBAL_SCOPE ? 'globale' : workspaceName(rule.scope) || rule.scope;
+    const context = `(${meta.short}, ${where})`;
     const focusKey = (control) => `${rule.id}:${control}`;
     const pendingDelete = state.pendingDelete === rule.id;
 
-    // Named by the visible label; on/off comes from `checked` + role=switch, never from the name.
+    // Named after the visible label; on/off comes from `checked` + role=switch, never from the name.
     const toggle = h('input', {
       type: 'checkbox',
       role: 'switch',
       checked: rule.enabled,
-      'aria-labelledby': labelId,
+      'aria-label': `${name} ${context}`,
       'data-focus-key': focusKey('switch'),
       onchange: (event) => storage.setRuleEnabled(rule.id, event.target.checked).catch(showError),
     });
@@ -515,11 +528,12 @@
         type: 'button',
         title: pendingDelete ? 'Premi di nuovo per eliminare' : 'Elimina regola',
         // The name starts with the visible text ("Elimina?") so voice control users can say it.
-        'aria-label': pendingDelete ? `Elimina? Conferma l’eliminazione di «${name}»` : `Elimina «${name}»`,
+        'aria-label': pendingDelete ? `Elimina? Conferma l’eliminazione di «${name}» ${context}` : `Elimina «${name}» ${context}`,
         'data-focus-key': focusKey('delete'),
-        // Focus stays on this button across the confirm step: a held Enter must not confirm by auto-repeat.
+        // Focus stays on this button across the confirm step: a held Enter or Space must not confirm by
+        // auto-repeat. Other held keys (Tab, arrows) must keep working.
         onkeydown: (event) => {
-          if (event.repeat) event.preventDefault();
+          if (event.repeat && (event.key === 'Enter' || event.key === ' ')) event.preventDefault();
         },
         onclick: () => onDeleteClick(rule, name),
       },
@@ -536,7 +550,7 @@
           'div',
           { class: 'rule-title' },
           h('span', { class: `badge badge-${rule.action}`, title: subtitle }, icon(meta.icon, 12), meta.short),
-          h('span', { class: 'rule-label', id: labelId, title: rule.label || rule.selector }, name),
+          h('span', { class: 'rule-label', title: rule.label || rule.selector }, name),
         ),
         h('code', { class: 'rule-selector', title: rule.selector }, rule.selector),
         h('div', { class: 'rule-meta' }, h('span', { class: 'chip' }, subtitle), matchChip(rule)),
@@ -554,7 +568,7 @@
               class: 'icon-btn',
               type: 'button',
               title: canTarget ? 'Evidenzia gli elementi nella pagina' : 'Disponibile nella scheda Slack del workspace',
-              'aria-label': `Evidenzia «${name}»`,
+              'aria-label': `Evidenzia «${name}» ${context}`,
               'data-focus-key': focusKey('flash'),
               disabled: !canTarget,
               onclick: () => sendToTab({ type: C.MSG.FLASH_RULE, ruleId: rule.id }).catch(showError),
@@ -567,7 +581,7 @@
               class: 'icon-btn',
               type: 'button',
               title: canTarget ? 'Modifica selettore e CSS nella pagina' : 'Disponibile nella scheda Slack del workspace',
-              'aria-label': `Modifica «${name}»`,
+              'aria-label': `Modifica «${name}» ${context}`,
               'data-focus-key': focusKey('edit'),
               disabled: !canTarget,
               onclick: async () => {

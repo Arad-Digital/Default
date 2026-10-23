@@ -383,11 +383,13 @@ button {
   padding: 12px 14px 4px;
 }
 
+/* The section, not just the list, keeps a minimum: if it could shrink below the list's own minimum, the
+   list would spill over the footer at large text sizes. Past that point the popup scrolls instead. */
 body:not(.in-page) .rules {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 9.5rem;
 }
 
 .section-head {
