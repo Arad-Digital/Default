@@ -220,6 +220,9 @@
 
   /** Selector matching exactly `el`. @returns {SelectorResult} */
   function uniqueSelector(el) {
+    // A detached node (Slack re-rendered it) has no ancestors to anchor to: the structural fallback
+    // would degrade to a bare tag such as `div`. Report it as invalid instead of guessing.
+    if (!el.isConnected) return { selector: '', count: -1, fragile: true };
     return withMemo(() => findUnique(el));
   }
 
@@ -356,6 +359,7 @@
    * @returns {SelectorResult}
    */
   function similarSelector(el, uniqueResult) {
+    if (!el.isConnected) return { selector: '', count: -1, fragile: true, similar: false };
     return withMemo(() => findSimilar(el, uniqueResult));
   }
 

@@ -6,9 +6,11 @@
  * without saving anything.
  *
  * Event strategy:
- * - Listeners are registered on `window` in the capture phase, at document_start, so they run
- *   before any listener Slack can register. Page listeners exist only while the inspector is active,
- *   except a single keydown listener for the Alt+S shortcut.
+ * - Listeners are registered on `window` in the capture phase. Pointer, mouse and scroll listeners
+ *   exist only while the inspector is active. The keydown listener (Alt+S) and the keyboard/
+ *   clipboard/focus isolation listeners stay installed from document_start: same-target capture
+ *   listeners run in registration order, so they must be registered before Slack's to run first.
+ *   While the inspector is inactive they return immediately.
  * - While inspecting, pointer/mouse/click events aimed at Slack are cancelled (preventDefault +
  *   stopImmediatePropagation): clicking selects an element instead of triggering Slack.
  * - Hover is never blocked, so Slack's hover-only UI (message actions toolbar…) can be targeted.
@@ -336,8 +338,9 @@
     const parentEl = usableParent(el);
     const unique = gen.uniqueSelector(el);
     const similar = gen.similarSelector(el, unique); // reuses the unique result as its fallback
-    // The parent selector is computed only when "Genitore" is actually chosen (ensureParent).
-    const parent = parentEl ? { el: parentEl, selector: null, count: 0, fragile: false } : null;
+    // Computed now, while the element is attached: Slack unmounts hover-only UI (message toolbar)
+    // as soon as the pointer reaches our panel, and a detached parent has no meaningful selector.
+    const parent = parentEl ? { ...gen.uniqueSelector(parentEl), el: parentEl } : null;
     state.candidates = { unique, similar, parent };
     if (resetTargeting) {
       // A structural (fragile) path rarely survives Slack re-renders: prefer "similar" when it exists.
@@ -349,15 +352,8 @@
     highlightCandidate();
   }
 
-  function ensureParent() {
-    const parent = state.candidates && state.candidates.parent;
-    if (parent && parent.selector === null) Object.assign(parent, gen.uniqueSelector(parent.el));
-    return parent;
-  }
-
   function currentCandidate() {
     if (!state.candidates) return null;
-    if (state.targeting === 'parent') return ensureParent() || state.candidates.unique;
     return state.candidates[state.targeting] || state.candidates.unique;
   }
 
@@ -1004,7 +1000,8 @@
 
   function resetCss() {
     state.editor.cssDirty = false;
-    refreshEditor();
+    refreshEditor(); // removes the reset button itself: keep keyboard focus inside the editor
+    state.refs.css.focus({ preventScroll: true });
   }
 
   function scheduleRefresh() {
