@@ -8,8 +8,11 @@
  * Performance guards (Slack's virtual_list adds/removes rows on every scroll frame):
  * - the observer exists only while at least one collapse rule is active;
  * - it watches childList only (no attributes, no character data);
- * - records are batched into one requestAnimationFrame pass that only inspects the added subtrees
- *   (a full document scan only for big batches), before the next paint, so buttons never flicker;
+ * - records are batched into one requestAnimationFrame pass that only inspects the added subtrees,
+ *   before the next paint, so buttons never flicker;
+ * - the backlog is capped: as soon as more than FULL_SCAN_THRESHOLD subtrees are pending, or the page
+ *   is hidden (rAF is paused there while the observer keeps firing), the pass becomes one full document
+ *   scan and no references to possibly detached Slack subtrees are kept;
  * - injected toggles are tracked in a Set: orphan cleanup never queries the whole document.
  */
 (function (root) {
@@ -22,7 +25,11 @@
   const TOGGLE = 'toggle';
   const FULL_SCAN_THRESHOLD = 150;
   const STOPPED_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'keydown', 'keyup', 'keypress'];
+  // Element reflection (Chrome 135+) is the only way to point from the shadow tree at the Slack block.
+  const HAS_ARIA_CONTROLS_ELEMENTS = 'ariaControlsElements' in Element.prototype;
 
+  // The 24px minimums give a WCAG 2.5.8 target size; margin 0 keeps the toggle's footprint in Slack's
+  // (virtualized) lists at 24px, so rows do not grow. The padding and the label can still widen it.
   const TOGGLE_CSS = `
     :host { display: block; }
     button {
@@ -30,9 +37,12 @@
       box-sizing: border-box;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 4px;
+      min-block-size: 24px;
+      min-inline-size: 24px;
       max-width: 100%;
-      margin: 2px 0;
+      margin: 0;
       padding: 1px 6px 1px 4px;
       border-radius: 4px;
       font: 500 12px/18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -41,9 +51,9 @@
       cursor: pointer;
     }
     button:hover, button:focus-visible { opacity: 1; background: rgba(127, 127, 127, 0.18); }
-    button:focus-visible { outline: 2px solid #1d9bd1; outline-offset: 1px; }
+    button:focus-visible { outline: 2px solid var(--sut-accent, #1d9bd1); outline-offset: 1px; }
     .arrow { display: inline-block; width: 10px; text-align: center; transition: transform 0.15s ease; }
-    :host([data-collapsed="false"]) .arrow { transform: rotate(90deg); }
+    button[aria-expanded="true"] .arrow { transform: rotate(90deg); }
     .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .label:empty { display: none; }
     @media (prefers-reduced-motion: reduce) { .arrow { transition: none; } }
@@ -114,13 +124,23 @@
   }
 
   function onMutations(records) {
+    // rAF does not run while the page is hidden, but the observer keeps firing: don't hoard subtrees.
+    if (document.hidden) switchToFullScan();
     for (const record of records) {
+      if (record.removedNodes.length) checkOrphans = true;
+      if (fullScan) continue; // the next pass scans the whole document anyway
       for (const node of record.addedNodes) {
         if (node.nodeType === Node.ELEMENT_NODE && !node.hasAttribute(C.UI_ATTR)) pendingRoots.add(node);
       }
-      if (record.removedNodes.length) checkOrphans = true;
+      if (pendingRoots.size > FULL_SCAN_THRESHOLD) switchToFullScan();
     }
-    if (pendingRoots.size || checkOrphans) schedule();
+    if (fullScan || pendingRoots.size || checkOrphans) schedule();
+  }
+
+  /** Drops the pending subtrees (they may already be detached) in favour of one full document scan. */
+  function switchToFullScan() {
+    pendingRoots.clear();
+    fullScan = true;
   }
 
   function schedule() {
@@ -155,13 +175,28 @@
     // Toggles sit right before their target (several rules may stack their own).
     for (let prev = el.previousElementSibling; prev && prev.getAttribute(C.UI_ATTR) === TOGGLE; prev = prev.previousElementSibling) {
       if (prev.getAttribute(C.RULE_ATTR) === rule.id) {
+        // Re-linked on every pass: Slack may have swapped the target node while the toggle stayed.
+        linkTarget(prev, el);
         paint(prev, rule);
         return;
       }
     }
     const host = createToggle(rule);
     el.parentNode.insertBefore(host, el);
+    linkTarget(host, el);
     toggles.add(host);
+  }
+
+  /**
+   * Tells assistive technology which Slack block the toggle opens. An id-based aria-controls cannot
+   * cross the shadow boundary; reflected element references can (outward), where supported.
+   */
+  function linkTarget(host, el) {
+    if (!HAS_ARIA_CONTROLS_ELEMENTS) return;
+    const button = host.shadowRoot.querySelector('button');
+    const current = button.ariaControlsElements;
+    if (current && current.length === 1 && current[0] === el) return;
+    button.ariaControlsElements = [el];
   }
 
   function createToggle(rule) {
@@ -180,6 +215,7 @@
     button.type = 'button';
     const arrow = document.createElement('span');
     arrow.className = 'arrow';
+    arrow.setAttribute('aria-hidden', 'true'); // decorative: aria-expanded carries the state
     arrow.textContent = '▸';
     const label = document.createElement('span');
     label.className = 'label';
@@ -201,9 +237,11 @@
     const signature = `${collapsed}|${name}`;
     if (host.dataset.sutSignature === signature) return; // nothing changed: avoid DOM churn
     host.dataset.sutSignature = signature;
-    host.setAttribute('data-collapsed', String(collapsed));
     const button = host.shadowRoot.querySelector('button');
+    // aria-expanded is the single source of truth: it also drives the arrow rotation in TOGGLE_CSS.
     button.setAttribute('aria-expanded', String(!collapsed));
+    // Stable name in both states (when open the visible text is only the arrow).
+    button.setAttribute('aria-label', name);
     button.title = `${collapsed ? 'Mostra' : 'Nascondi'} "${name}" · Slack UI Tweaker`;
     // Closed: arrow + name, so it is clear what is hidden. Open: just the arrow.
     button.querySelector('.label').textContent = collapsed ? name : '';
