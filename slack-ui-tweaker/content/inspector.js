@@ -42,6 +42,7 @@
     updateRule: async () => null,
     removeRule: async () => false,
     onActiveChange: () => {},
+    onContextLost: () => {},
   };
 
   const state = {
@@ -69,6 +70,8 @@
   let viewportFrame = 0;
   let editorTimer = 0;
   let pointer = { x: -1, y: -1 };
+  /** Element focused before the inspector opened, restored when its panel closes. */
+  let prevFocus = null;
 
   /* ------------------------------------------------------------------ lifecycle */
 
@@ -76,6 +79,29 @@
     Object.assign(hooks, callbacks);
     window.addEventListener('keydown', onKeyDown, true);
     for (const type of ISOLATED_EVENTS) window.addEventListener(type, isolateUIEvent, true);
+  }
+
+  /** Removes every listener this module installed (extension disabled, removed or updated). */
+  function destroy() {
+    deactivate();
+    window.removeEventListener('keydown', onKeyDown, true);
+    for (const type of ISOLATED_EVENTS) window.removeEventListener(type, isolateUIEvent, true);
+  }
+
+  /** False once the extension has been reloaded, disabled or removed under this page. */
+  function contextAlive() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Gives focus back to where it was before the panel took it (only if the panel had it). */
+  function restoreFocus(panelHadFocus) {
+    const target = prevFocus;
+    if (!panelHadFocus || !target || !target.isConnected || typeof target.focus !== 'function') return;
+    target.focus({ preventScroll: true });
   }
 
   function isActive() {
@@ -95,6 +121,7 @@
       return false;
     }
     ui.mount();
+    prevFocus = ui.focusedElement();
     Object.assign(state, { active: true, view: 'hover', hoverEl: null, baseEl: null, trail: [], scope: null, editor: null, refs: null });
     window.addEventListener('mousemove', onMouseMove, { capture: true, passive: true });
     window.addEventListener('scroll', onViewportChange, { capture: true, passive: true });
@@ -121,11 +148,14 @@
     engine.clearPreview();
     if (editedRuleId) engine.suspend(null);
     Object.assign(state, { view: 'hover', hoverEl: null, baseEl: null, trail: [], candidates: null, editor: null, refs: null });
+    const panelHadFocus = ui.panel.hasFocus();
     ui.panel.close();
     ui.tooltip.hide();
     ui.banner(null);
     ui.highlighter.clear();
     setCursor(false);
+    restoreFocus(panelHadFocus);
+    prevFocus = null;
     hooks.onActiveChange(false);
   }
 
@@ -170,9 +200,18 @@
 
   function onKeyDown(event) {
     if (isShortcut(event) && !event.repeat) {
+      if (!contextAlive()) {
+        // Orphaned script: let the key through and clean up instead of swallowing it.
+        hooks.onContextLost();
+        return;
+      }
       event.preventDefault();
       event.stopImmediatePropagation();
       toggle('keyboard');
+      return;
+    }
+    if (ui.isFromUI(event) && ui.handleKey(event)) {
+      event.stopImmediatePropagation(); // arrows moved the panel grip or the launcher
       return;
     }
     if (!state.active) return;
@@ -271,9 +310,11 @@
   function backToHover() {
     engine.clearPreview();
     Object.assign(state, { view: 'hover', hoverEl: null, baseEl: null, trail: [], candidates: null, editor: null, refs: null });
+    const panelHadFocus = ui.panel.hasFocus();
     ui.panel.close();
     ui.highlighter.clear();
     ui.banner(HOVER_HINT);
+    restoreFocus(panelHadFocus);
   }
 
   /* ------------------------------------------------------------------ selection */
@@ -294,8 +335,9 @@
     const el = state.baseEl;
     const parentEl = usableParent(el);
     const unique = gen.uniqueSelector(el);
-    const similar = gen.similarSelector(el);
-    const parent = parentEl ? { ...gen.uniqueSelector(parentEl), el: parentEl } : null;
+    const similar = gen.similarSelector(el, unique); // reuses the unique result as its fallback
+    // The parent selector is computed only when "Genitore" is actually chosen (ensureParent).
+    const parent = parentEl ? { el: parentEl, selector: null, count: 0, fragile: false } : null;
     state.candidates = { unique, similar, parent };
     if (resetTargeting) {
       // A structural (fragile) path rarely survives Slack re-renders: prefer "similar" when it exists.
@@ -307,8 +349,15 @@
     highlightCandidate();
   }
 
+  function ensureParent() {
+    const parent = state.candidates && state.candidates.parent;
+    if (parent && parent.selector === null) Object.assign(parent, gen.uniqueSelector(parent.el));
+    return parent;
+  }
+
   function currentCandidate() {
     if (!state.candidates) return null;
+    if (state.targeting === 'parent') return ensureParent() || state.candidates.unique;
     return state.candidates[state.targeting] || state.candidates.unique;
   }
 
@@ -320,8 +369,11 @@
 
   function highlightCandidate() {
     const candidate = currentCandidate();
-    ui.highlighter.setPrimary(targetElement(), 'selected');
-    ui.highlighter.setMatches(candidate ? gen.queryAll(candidate.selector, MAX_HIGHLIGHTED_MATCHES) : []);
+    ui.highlighter.update({
+      primary: targetElement(),
+      kind: 'selected',
+      matches: candidate ? gen.queryAll(candidate.selector, MAX_HIGHLIGHTED_MATCHES) : [],
+    });
   }
 
   function goUp() {
@@ -415,19 +467,42 @@
 
   /* ------------------------------------------------------------------ small UI builders */
 
-  function iconButton(name, title, onClick, disabled = false) {
-    return h('button', { class: 'icon-btn', type: 'button', title, 'aria-label': title, disabled, onclick: onClick }, icon(name, 15));
+  /** `focusKey` lets ui.panel.show() give focus back to this button after a re-render. */
+  function iconButton(name, title, onClick, disabled = false, focusKey = name) {
+    return h(
+      'button',
+      { class: 'icon-btn', type: 'button', title, 'aria-label': title, disabled, onclick: onClick, 'data-focus-key': focusKey },
+      icon(name, 15),
+    );
   }
 
-  function segmented(options, value, onChange) {
+  /** Drag handle that can also be moved with the arrow keys (see ui.handleKey). */
+  function gripButton() {
+    return h(
+      'button',
+      {
+        class: 'icon-btn grip',
+        type: 'button',
+        'data-drag-handle': '',
+        'data-focus-key': 'grip',
+        'aria-label': 'Sposta pannello (usa le frecce)',
+        title: 'Trascina, oppure usa le frecce, per spostare il pannello',
+      },
+      icon('move', 15),
+    );
+  }
+
+  /** Exclusive choice rendered as aria-pressed buttons, named by the caption with id `labelId`. */
+  function segmented(options, value, onChange, labelId) {
     return h(
       'div',
-      { class: 'segmented', role: 'group' },
+      { class: 'segmented', role: 'group', 'aria-labelledby': labelId },
       options.map((item) =>
         h(
           'button',
           {
             type: 'button',
+            'data-focus-key': `seg:${item.value}`,
             'aria-pressed': String(item.value === value),
             disabled: !!item.disabled,
             title: item.title || null,
@@ -448,8 +523,21 @@
     return h('span', { class: 'pill ok' }, icon('check', 12), n === 1 ? '1 elemento' : `${n} elementi`);
   }
 
-  function field(label, ...controls) {
-    return h('label', { class: 'field' }, h('span', null, label), ...controls);
+  let fieldSeq = 0;
+
+  /**
+   * One labelled control. The <label> holds only the name; status/hint nodes passed as
+   * `descriptions` are linked with aria-describedby instead of being packed into the name.
+   * IDs are scoped to the panel's shadow root.
+   */
+  function field(text, control, ...descriptions) {
+    if (!control.id) control.id = `sut-f${++fieldSeq}`;
+    const ids = descriptions.filter(Boolean).map((node) => {
+      if (!node.id) node.id = `${control.id}-d${++fieldSeq}`;
+      return node.id;
+    });
+    if (ids.length) control.setAttribute('aria-describedby', ids.join(' '));
+    return h('div', { class: 'field' }, h('label', { class: 'field-label', for: control.id }, text), control, ...descriptions);
   }
 
   function option(value, label, selected) {
@@ -470,6 +558,7 @@
       { class: 'panel-head', 'data-drag-handle': '' },
       h('span', { class: 'tag-chip' }, `<${el.localName}>`),
       h('span', { class: 'head-title mono', title: info.hint || el.localName }, info.hint || 'senza attributi stabili'),
+      gripButton(),
       iconButton('arrowUp', 'Seleziona il genitore', goUp, !usableParent(el)),
       iconButton('arrowDown', 'Torna al figlio', goDown, !state.trail.length && !el.firstElementChild),
       iconButton('close', 'Chiudi (Esc)', deactivate),
@@ -478,7 +567,7 @@
     const targeting = h(
       'div',
       { class: 'section' },
-      h('span', { class: 'label' }, 'Applica a'),
+      h('span', { class: 'label', id: 'sut-target-label' }, 'Applica a'),
       segmented(
         [
           { value: 'unique', label: 'Questo elemento', title: 'Solo questo elemento specifico' },
@@ -503,6 +592,7 @@
           renderMenu();
           highlightCandidate();
         },
+        'sut-target-label',
       ),
       h('code', { class: 'selector', title: candidate.selector }, candidate.selector),
       h(
@@ -518,7 +608,7 @@
     const scope = h(
       'div',
       { class: 'section' },
-      h('span', { class: 'label' }, 'Ambito'),
+      h('span', { class: 'label', id: 'sut-scope-label' }, 'Ambito'),
       segmented(
         [
           {
@@ -534,19 +624,20 @@
           state.scope = value;
           renderMenu();
         },
+        'sut-scope-label',
       ),
     );
 
     const actions = h(
       'div',
-      { class: 'actions', role: 'menu' },
+      { class: 'actions', role: 'group', 'aria-label': 'Azioni' },
       C.ACTION_ORDER.map(actionRow),
       h(
         'div',
         { class: 'action' },
         h(
           'button',
-          { class: 'action-main', type: 'button', role: 'menuitem', onclick: () => openEditor({ action: 'hide' }) },
+          { class: 'action-main', type: 'button', 'data-focus-key': 'action:editor', onclick: () => openEditor({ action: 'hide' }) },
           h('span', { class: 'ico' }, icon('code', 16)),
           h('span', { class: 'action-text' }, h('strong', null, 'Editor selettore / CSS…'), h('small', null, 'Verifica e ritocca prima di salvare')),
         ),
@@ -571,7 +662,7 @@
       {
         class: 'action-main',
         type: 'button',
-        role: 'menuitem',
+        'data-focus-key': `action:${action}`,
         onclick: () => createRule(action),
         onpointerenter: preview,
         onpointerleave: clearActionPreview,
@@ -581,7 +672,12 @@
       h('span', { class: 'ico' }, icon(meta.icon, 16)),
       h('span', { class: 'action-text' }, h('strong', null, meta.label), h('small', null, meta.hint)),
     );
-    return h('div', { class: 'action' }, main, iconButton('sliders', 'Personalizza nell\'editor', () => openEditor({ action })));
+    return h(
+      'div',
+      { class: 'action' },
+      main,
+      iconButton('sliders', `Personalizza «${meta.label}» nell'editor`, () => openEditor({ action }), false, `sliders:${action}`),
+    );
   }
 
   function previewAction(action) {
@@ -625,7 +721,7 @@
   function reportError(error) {
     const message = String((error && error.message) || error);
     if (/context invalidated/i.test(message)) {
-      ui.toast("L'estensione è stata aggiornata: ricarica la pagina di Slack.", { tone: 'error', duration: 8000 });
+      ui.toast('Slack UI Tweaker è stato aggiornato o disattivato: ricarica la pagina di Slack.', { tone: 'error', duration: 8000 });
     } else {
       ui.toast(`Operazione non riuscita: ${message}`, { tone: 'error' });
     }
@@ -673,6 +769,7 @@
       { class: 'panel-head', 'data-drag-handle': '' },
       h('span', { class: 'tag-chip' }, icon('code', 13)),
       h('span', { class: 'head-title' }, ed.ruleId ? 'Modifica regola' : 'Editor selettore / CSS'),
+      gripButton(),
       iconButton('close', 'Chiudi senza salvare (Esc)', deactivate),
     );
 
@@ -731,7 +828,10 @@
         scheduleRefresh();
       },
     });
-    refs.cssState = h('div', { class: 'meta' });
+    // Description (linked with aria-describedby) and actions are separate: a button must not
+    // end up inside the textarea's description or label.
+    refs.cssHint = h('div', { class: 'meta' });
+    refs.cssActions = h('div', { class: 'meta' });
 
     refs.live = h('input', {
       type: 'checkbox',
@@ -750,8 +850,9 @@
       refs.options,
       field('Nome della regola', refs.label),
       field('Ambito', refs.scope),
-      field('Regola CSS', refs.css, refs.cssState),
+      field('Regola CSS', refs.css, refs.cssHint),
     );
+    refs.css.closest('.field').append(refs.cssActions);
 
     const foot = h(
       'div',
@@ -781,18 +882,21 @@
           class: 'mono',
           value: o.hoverAncestor || '',
           placeholder: '[data-qa="message_container"]',
-          hidden: o.hoverTarget !== 'ancestor',
           oninput: (event) => {
             o.hoverAncestor = event.target.value.trim();
             changed();
           },
         });
+        // Its own labelled field (a placeholder is not a label), shown only when relevant.
+        const ancestorField = field('Selettore dell’antenato', ancestor);
+        ancestorField.hidden = o.hoverTarget !== 'ancestor';
         const target = h(
           'select',
           {
             onchange: (event) => {
               o.hoverTarget = event.target.value;
-              ancestor.hidden = o.hoverTarget !== 'ancestor';
+              ancestorField.hidden = o.hoverTarget !== 'ancestor';
+              if (!ancestorField.hidden) ancestor.focus();
               changed();
             },
           },
@@ -800,20 +904,24 @@
           option('container', 'Il contenitore (messaggio, voce di lista)', o.hoverTarget),
           option('ancestor', 'Un antenato personalizzato…', o.hoverTarget),
         );
-        box.append(field('Rivela quando il cursore è su', target, ancestor));
+        box.append(field('Rivela quando il cursore è su', target), ancestorField);
         break;
       }
       case 'fade': {
-        const value = h('span', { class: 'range-val' }, `${Math.round(o.opacity * 100)}%`);
+        const percent = (v) => `${Math.round(v * 100)}%`;
+        // The visible readout is decorative; assistive tech reads the value from aria-valuetext.
+        const value = h('span', { class: 'range-val', 'aria-hidden': 'true' }, percent(o.opacity));
         const range = h('input', {
           type: 'range',
           min: 0,
           max: 1,
           step: 0.05,
           value: String(o.opacity),
+          'aria-valuetext': percent(o.opacity),
           oninput: (event) => {
             o.opacity = Number(event.target.value);
-            value.textContent = `${Math.round(o.opacity * 100)}%`;
+            value.textContent = percent(o.opacity);
+            event.target.setAttribute('aria-valuetext', percent(o.opacity));
             changed();
           },
         });
@@ -825,7 +933,11 @@
             changed();
           },
         });
-        box.append(field('Opacità', h('div', { class: 'range' }, range, value)), h('div', { class: 'field' }, h('label', { class: 'check' }, restore, 'Ripristina al 100% in hover')));
+        const opacityField = field('Opacità', range);
+        const row = h('div', { class: 'range' });
+        range.replaceWith(row);
+        row.append(range, value);
+        box.append(opacityField, h('div', { class: 'field' }, h('label', { class: 'check' }, restore, 'Ripristina al 100% in hover')));
         break;
       }
       case 'compact': {
@@ -874,18 +986,20 @@
     const ed = state.editor;
     const refs = state.refs;
     refs.css.readOnly = ed.action === 'collapse';
-    let content;
+    let hint;
     if (ed.action === 'collapse') {
-      content = h('span', { class: 'hint' }, 'Gestito dal pulsante di toggle: il CSS non è modificabile.');
+      hint = h('span', { class: 'hint' }, 'Gestito dal pulsante di toggle: il CSS non è modificabile.');
     } else if (ed.cssDirty) {
-      content = [
-        h('span', { class: 'pill warn' }, 'Modificato a mano'),
-        h('button', { class: 'link', type: 'button', onclick: resetCss }, 'Rigenera dal selettore'),
-      ];
+      hint = h('span', { class: 'pill warn' }, 'Modificato a mano');
     } else {
-      content = h('span', { class: 'hint' }, 'Generato automaticamente. Modificalo per salvare una regola CSS personalizzata.');
+      hint = h('span', { class: 'hint' }, 'Generato automaticamente. Modificalo per salvare una regola CSS personalizzata.');
     }
-    refs.cssState.replaceChildren(...[].concat(content));
+    refs.cssHint.replaceChildren(hint);
+    const showReset = ed.cssDirty && ed.action !== 'collapse';
+    refs.cssActions.hidden = !showReset;
+    refs.cssActions.replaceChildren(
+      showReset ? h('button', { class: 'link', type: 'button', 'data-focus-key': 'css-reset', onclick: resetCss }, 'Rigenera dal selettore') : null,
+    );
   }
 
   function resetCss() {
@@ -912,8 +1026,8 @@
       if (refs.css.value !== ed.css) refs.css.value = ed.css;
     }
     updateCssState();
-    ui.highlighter.setPrimary(null);
-    ui.highlighter.setMatches(result.ok ? gen.queryAll(ed.selector, MAX_HIGHLIGHTED_MATCHES) : []);
+    // applyEditorPreview() refreshes the boxes once the preview CSS is in place.
+    ui.highlighter.update({ primary: null, matches: result.ok ? gen.queryAll(ed.selector, MAX_HIGHLIGHTED_MATCHES) : [] }, false);
     applyEditorPreview();
   }
 
@@ -1007,5 +1121,5 @@
     return elements.length;
   }
 
-  SUT.inspector = Object.freeze({ init, activate, deactivate, toggle, isActive, editRule, flashRule });
+  SUT.inspector = Object.freeze({ init, destroy, activate, deactivate, toggle, isActive, editRule, flashRule });
 })(globalThis);

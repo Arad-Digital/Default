@@ -26,6 +26,8 @@
   const SCORE = Object.freeze({ qaFlag: 80, qaPresence: 76, prefixPenalty: 30, id: 56, cls: 40, tag: 4 });
 
   const MAX_ANCESTOR_DEPTH = 12;
+  /** findContainers walks further up than anchoredSelector (page-level containers), but not unbounded. */
+  const MAX_CONTAINER_DEPTH = 24;
   const MAX_ANCHOR_CANDIDATES = 8;
   const MAX_QA_FLAGS = 3;
   /** "Similar" selectors matching more than this are probably too broad. */
@@ -87,22 +89,46 @@
     return list.length > limit ? Array.prototype.slice.call(list, 0, limit) : Array.from(list);
   }
 
-  /** @returns {number} number of matches in the document, -1 when the selector is invalid */
-  function count(selector) {
+  /**
+   * Cache of document-wide queries, alive only while one public call runs: the DOM cannot change
+   * in the middle of a synchronous call, and the cache is dropped before Slack can mutate it again.
+   * The same selector is otherwise queried several times per click (unique search, similar
+   * search, result counts) on Slack's very large DOM.
+   * @type {Map<string, NodeList|null>|null}
+   */
+  let memo = null;
+
+  function withMemo(fn) {
+    if (memo) return fn();
+    memo = new Map();
     try {
-      return document.querySelectorAll(selector).length;
-    } catch {
-      return -1;
+      return fn();
+    } finally {
+      memo = null;
     }
   }
 
-  function isUniqueFor(selector, el) {
+  function documentMatches(selector) {
+    if (memo && memo.has(selector)) return memo.get(selector);
+    let list;
     try {
-      const list = document.querySelectorAll(selector);
-      return list.length === 1 && list[0] === el;
+      list = document.querySelectorAll(selector);
     } catch {
-      return false;
+      list = null;
     }
+    if (memo) memo.set(selector, list);
+    return list;
+  }
+
+  /** @returns {number} number of matches in the document, -1 when the selector is invalid */
+  function count(selector) {
+    const list = documentMatches(selector);
+    return list ? list.length : -1;
+  }
+
+  function isUniqueFor(selector, el) {
+    const list = documentMatches(selector);
+    return !!list && list.length === 1 && list[0] === el;
   }
 
   function matchesSafe(el, selector) {
@@ -194,25 +220,29 @@
 
   /** Selector matching exactly `el`. @returns {SelectorResult} */
   function uniqueSelector(el) {
+    return withMemo(() => findUnique(el));
+  }
+
+  function findUnique(el) {
     const parts = partsOf(el);
     const strong = parts.filter((p) => !p.tagOnly);
 
     // 1. One attribute of the element itself.
     for (const part of strong) {
       const selector = render(el, [part]);
-      if (isUniqueFor(selector, el)) return result(selector, false);
+      if (isUniqueFor(selector, el)) return result(selector, false, 1);
     }
     // 2. Two attributes combined, e.g. div[role="treeitem"][aria-label="general"].
     const top = strong.slice(0, 5);
     for (let i = 0; i < top.length; i++) {
       for (let j = i + 1; j < top.length; j++) {
         const selector = render(el, [top[i], top[j]]);
-        if (isUniqueFor(selector, el)) return result(selector, false);
+        if (isUniqueFor(selector, el)) return result(selector, false, 1);
       }
     }
     // 3. Anchored to a stable ancestor.
     const anchored = anchoredSelector(el, parts);
-    if (anchored) return result(anchored, false);
+    if (anchored) return result(anchored, false, 1);
     // 4. Structural path from the closest unique ancestor (fragile).
     return structuralSelector(el);
   }
@@ -269,8 +299,9 @@
     return result(steps.join(' > '), true);
   }
 
-  function result(selector, fragile) {
-    return { selector, count: count(selector), fragile };
+  /** `knownCount` skips a query when the caller already proved the selector unique. */
+  function result(selector, fragile, knownCount) {
+    return { selector, count: knownCount === undefined ? count(selector) : knownCount, fragile };
   }
 
   /* ------------------------------------------------------------------ similar selector */
@@ -279,7 +310,11 @@
   function findContainers(el, max) {
     const out = [];
     let depth = 0;
-    for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement, depth++) {
+    for (
+      let a = el.parentElement;
+      a && a !== document.body && a !== document.documentElement && depth < MAX_CONTAINER_DEPTH;
+      a = a.parentElement, depth++
+    ) {
       const part = partsOf(a).find((p) => !p.tagOnly && !p.contentBound && isUniqueFor(render(a, [p]), a));
       if (part) {
         out.push({ el: a, selector: render(a, [part]), depth });
@@ -316,9 +351,15 @@
   /**
    * Selector matching `el` and the elements similar to it, preferably scoped to a stable container
    * (e.g. every channel row of the sidebar). Falls back to the unique selector.
+   * @param {Element} el
+   * @param {SelectorResult} [uniqueResult] already computed uniqueSelector(el), reused as fallback
    * @returns {SelectorResult}
    */
-  function similarSelector(el) {
+  function similarSelector(el, uniqueResult) {
+    return withMemo(() => findSimilar(el, uniqueResult));
+  }
+
+  function findSimilar(el, uniqueResult) {
     const parts = partsOf(el).filter((p) => !p.tagOnly && !p.contentBound);
     const containers = findContainers(el, 3);
     const seen = new Set();
@@ -349,7 +390,7 @@
     }
 
     if (best) return { selector: best.selector, count: best.count, fragile: false, similar: true };
-    return { ...uniqueSelector(el), similar: false };
+    return { ...(uniqueResult || findUnique(el)), similar: false };
   }
 
   /* ------------------------------------------------------------------ helpers for the UI */

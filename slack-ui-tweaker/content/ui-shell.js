@@ -27,7 +27,14 @@
   const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
 
   const STYLES = `
-    :host { all: initial; }
+    :host {
+      all: initial;
+      /* Design tokens (prefixed: Slack's own custom properties inherit into the shadow root). */
+      --sut-accent: #1d9bd1; --sut-accent-tint: rgba(29, 155, 209, 0.12); --sut-accent-soft: rgba(29, 155, 209, 0.18); --sut-accent-ring: rgba(29, 155, 209, 0.25);
+      --sut-ok: #2bac76; --sut-ok-hover: #239a69; --sut-warn: #ecb22e; --sut-danger: #e01e5a;
+      --sut-surface: #1b1d21; --sut-sunken: #121416; --sut-raised: #2f3238;
+      --sut-text: #e9e9ea; --sut-muted: #b9babd; --sut-subtle: #9a9ca0; --sut-faint: #8b8d91; --sut-code: #ffd479; --sut-tag: #7fd1f5;
+    }
     *, *::before, *::after { box-sizing: border-box; }
     [hidden] { display: none !important; }
     svg { display: block; flex: none; }
@@ -36,22 +43,22 @@
 
     /* ---------- highlight boxes ---------- */
     .box { position: fixed; top: 0; left: 0; border-radius: 3px; pointer-events: none; }
-    .box.primary { outline: 2px solid #1d9bd1; outline-offset: -1px; background: rgba(29, 155, 209, 0.12); }
-    .box.selected { outline: 2px solid #2bac76; outline-offset: -1px; background: rgba(43, 172, 118, 0.14); }
-    .box.match { outline: 2px dashed #ecb22e; outline-offset: -1px; background: rgba(236, 178, 46, 0.1); }
-    .box.flash { outline: 2px solid #e01e5a; outline-offset: -1px; background: rgba(224, 30, 90, 0.12); animation: pulse 0.7s ease-in-out 3; }
+    .box.primary { outline: 2px solid var(--sut-accent); outline-offset: -1px; background: var(--sut-accent-tint); }
+    .box.selected { outline: 2px solid var(--sut-ok); outline-offset: -1px; background: rgba(43, 172, 118, 0.14); }
+    .box.match { outline: 2px dashed var(--sut-warn); outline-offset: -1px; background: rgba(236, 178, 46, 0.1); }
+    .box.flash { outline: 2px solid var(--sut-danger); outline-offset: -1px; background: rgba(224, 30, 90, 0.12); animation: pulse 0.7s ease-in-out 3; }
     @keyframes pulse { 50% { background: rgba(224, 30, 90, 0.3); } }
 
     /* ---------- tooltip ---------- */
     .tip {
       position: fixed; top: 0; left: 0; max-width: min(560px, calc(100vw - 16px));
-      padding: 4px 8px; border-radius: 6px; background: #121416; color: #f8f8f8;
+      padding: 4px 8px; border-radius: 6px; background: var(--sut-sunken); color: #f8f8f8;
       font: 500 11.5px/1.4 ${MONO}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35); pointer-events: none;
     }
-    .tip .tag { color: #7fd1f5; font-weight: 700; }
-    .tip .hint { color: #ffd479; margin-left: 6px; }
-    .tip .dim { color: #9a9ca0; margin-left: 8px; }
+    .tip .tag { color: var(--sut-tag); font-weight: 700; }
+    .tip .hint { color: var(--sut-code); margin-left: 6px; }
+    .tip .dim { color: var(--sut-subtle); margin-left: 8px; }
 
     /* ---------- banner ---------- */
     .banner {
@@ -66,7 +73,7 @@
     .panel {
       position: fixed; top: 0; left: 0; pointer-events: auto; color-scheme: dark;
       width: 340px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto;
-      overscroll-behavior: contain; background: #1b1d21; color: #e9e9ea;
+      overscroll-behavior: contain; background: var(--sut-surface); color: var(--sut-text);
       border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px;
       box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
       font: 13px/1.45 ${FONT}; cursor: default; animation: pop 0.12s ease-out;
@@ -75,38 +82,40 @@
     @keyframes pop { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
     .panel-head {
       position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px;
-      padding: 9px 8px 8px 12px; background: #1b1d21; border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-      cursor: move; user-select: none;
+      padding: 9px 8px 8px 12px; background: var(--sut-surface); border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      cursor: move; touch-action: none; user-select: none;
     }
+    .grip { cursor: grab; touch-action: none; }
+    .grip:active { cursor: grabbing; }
     .tag-chip {
       display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 5px;
-      background: rgba(29, 155, 209, 0.18); color: #7fd1f5; font: 600 11px/1.2 ${MONO}; white-space: nowrap;
+      background: var(--sut-accent-soft); color: var(--sut-tag); font: 600 11px/1.2 ${MONO}; white-space: nowrap;
     }
     .head-title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .head-title.mono { font: 500 11.5px/1.3 ${MONO}; color: #ffd479; }
+    .head-title.mono { font: 500 11.5px/1.3 ${MONO}; color: var(--sut-code); }
     .section { padding: 10px 12px; }
     .section + .section { border-top: 1px solid rgba(255, 255, 255, 0.07); }
-    .label { display: block; margin-bottom: 6px; color: #9a9ca0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+    .label { display: block; margin-bottom: 6px; color: var(--sut-subtle); font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
     .selector {
       display: block; margin-top: 8px; padding: 6px 8px; max-height: 70px; overflow: auto;
-      background: #121416; border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 6px;
-      color: #ffd479; font: 11.5px/1.45 ${MONO}; word-break: break-all; user-select: text; cursor: text;
+      background: var(--sut-sunken); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 6px;
+      color: var(--sut-code); font: 11.5px/1.45 ${MONO}; word-break: break-all; user-select: text; cursor: text;
     }
-    .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: #b9babd; }
+    .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--sut-muted); }
     .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); font-size: 11.5px; white-space: nowrap; }
     .pill.ok { background: rgba(43, 172, 118, 0.18); color: #6fdcaa; }
-    .pill.warn { background: rgba(236, 178, 46, 0.18); color: #ffd479; }
+    .pill.warn { background: rgba(236, 178, 46, 0.18); color: var(--sut-code); }
     .pill.err { background: rgba(224, 30, 90, 0.2); color: #ff8fb1; }
-    .hint { color: #8b8d91; font-size: 11.5px; }
+    .hint { color: var(--sut-faint); font-size: 11.5px; }
 
-    .segmented { display: flex; gap: 3px; padding: 3px; border-radius: 8px; background: #121416; }
+    .segmented { display: flex; gap: 3px; padding: 3px; border-radius: 8px; background: var(--sut-sunken); }
     .segmented button {
       all: unset; flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
-      padding: 6px 6px; border-radius: 6px; color: #b9babd; font: 500 12px/1.2 ${FONT};
+      padding: 6px 6px; border-radius: 6px; color: var(--sut-muted); font: 500 12px/1.2 ${FONT};
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
     }
     .segmented button:hover { color: #fff; }
-    .segmented button[aria-pressed="true"] { background: #2f3238; color: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+    .segmented button[aria-pressed="true"] { background: var(--sut-raised); color: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
     .segmented button:disabled { opacity: 0.4; cursor: default; }
     .segmented .n { padding: 0 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); font-size: 10.5px; font-variant-numeric: tabular-nums; }
 
@@ -114,80 +123,92 @@
     .action { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: 8px; }
     .action:hover, .action:focus-within { background: rgba(255, 255, 255, 0.06); }
     .action-main { all: unset; flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
-    .action-main .ico { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 7px; background: rgba(255, 255, 255, 0.07); color: #e9e9ea; }
-    .action-main:hover .ico { background: #1d9bd1; color: #fff; }
+    .action-main .ico { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 7px; background: rgba(255, 255, 255, 0.07); color: var(--sut-text); }
+    .action-main:hover .ico { background: var(--sut-accent); color: #fff; }
     .action-text { display: flex; flex-direction: column; min-width: 0; }
     .action-text strong { font-size: 13px; font-weight: 600; }
-    .action-text small { overflow: hidden; color: #9a9ca0; font-size: 11.5px; white-space: nowrap; text-overflow: ellipsis; }
+    .action-text small { overflow: hidden; color: var(--sut-subtle); font-size: 11.5px; white-space: nowrap; text-overflow: ellipsis; }
 
-    .icon-btn { all: unset; display: inline-grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: 6px; color: #b9babd; cursor: pointer; }
+    .icon-btn { all: unset; display: inline-grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: 6px; color: var(--sut-muted); cursor: pointer; }
     .icon-btn:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
     .icon-btn:disabled { opacity: 0.3; background: none; cursor: default; }
 
-    .foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px; border-top: 1px solid rgba(255, 255, 255, 0.07); color: #8b8d91; font-size: 11.5px; }
-    .foot.sticky { position: sticky; bottom: 0; background: #1b1d21; }
+    .foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px; border-top: 1px solid rgba(255, 255, 255, 0.07); color: var(--sut-faint); font-size: 11.5px; }
+    .foot.sticky { position: sticky; bottom: 0; background: var(--sut-surface); }
     .spacer { flex: 1; }
-    kbd { padding: 1px 5px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 4px; background: #2c2f35; color: #ddd; font: 600 10.5px/1.4 ${MONO}; }
+    kbd { padding: 1px 5px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 4px; background: var(--sut-raised); color: #ddd; font: 600 10.5px/1.4 ${MONO}; }
 
     /* ---------- form ---------- */
     .field { display: grid; gap: 5px; margin-bottom: 11px; }
-    .field > span { color: #b9babd; font-size: 11.5px; font-weight: 600; }
+    .field-label { color: var(--sut-muted); font-size: 11.5px; font-weight: 600; }
+    .field-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     input[type="text"], textarea, select {
       width: 100%; margin: 0; padding: 7px 9px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 7px; outline: none;
-      background: #121416; color: #f2f2f2; font: 12.5px/1.45 ${FONT};
+      background: var(--sut-sunken); color: #f2f2f2; font: 12.5px/1.45 ${FONT};
     }
     textarea, .mono { font: 12px/1.5 ${MONO}; }
     textarea { min-height: 54px; resize: vertical; white-space: pre; overflow: auto; tab-size: 2; }
-    textarea.wrap { white-space: pre-wrap; word-break: break-all; resize: none; }
-    textarea[readonly] { color: #9a9ca0; }
-    input:focus, textarea:focus, select:focus { border-color: #1d9bd1; box-shadow: 0 0 0 3px rgba(29, 155, 209, 0.25); }
+    textarea.wrap { white-space: pre-wrap; word-break: break-all; }
+    /* Chrome 123+: the selector box grows with its content (resize: vertical stays as the fallback). */
+    @supports (field-sizing: content) { textarea.wrap { field-sizing: content; min-block-size: 54px; max-block-size: 160px; } }
+    textarea[readonly] { color: var(--sut-subtle); }
+    input:focus, textarea:focus, select:focus { border-color: var(--sut-accent); box-shadow: 0 0 0 3px var(--sut-accent-ring); }
     .check { display: inline-flex; align-items: center; gap: 6px; color: #d1d2d3; font-size: 12px; cursor: pointer; user-select: none; }
-    input[type="checkbox"], input[type="range"] { accent-color: #1d9bd1; margin: 0; }
+    input[type="checkbox"], input[type="range"] { accent-color: var(--sut-accent); margin: 0; }
     .range { display: flex; align-items: center; gap: 10px; }
     .range input { flex: 1; }
     .range-val { width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
     .options:empty { display: none; }
 
     .btn { all: unset; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 7px; font: 600 12.5px/1.2 ${FONT}; cursor: pointer; white-space: nowrap; }
-    .btn.primary { background: #2bac76; color: #fff; }
-    .btn.primary:hover { background: #239a69; }
+    .btn.primary { background: var(--sut-ok); color: #fff; }
+    .btn.primary:hover { background: var(--sut-ok-hover); }
     .btn.ghost { background: rgba(255, 255, 255, 0.07); color: #e1e2e3; }
     .btn.ghost:hover { background: rgba(255, 255, 255, 0.12); }
-    .link { all: unset; color: #7fd1f5; font-size: 11.5px; cursor: pointer; text-decoration: underline; }
+    .link { all: unset; color: var(--sut-tag); font-size: 11.5px; cursor: pointer; text-decoration: underline; }
 
     button:focus-visible, .btn:focus-visible, .icon-btn:focus-visible, .action-main:focus-visible, .segmented button:focus-visible {
-      outline: 2px solid #1d9bd1; outline-offset: 1px;
+      outline: 2px solid var(--sut-accent); outline-offset: 1px;
     }
 
     /* ---------- toasts ---------- */
     .toasts { position: fixed; bottom: 18px; left: 50%; display: flex; flex-direction: column; align-items: center; gap: 8px; transform: translateX(-50%); pointer-events: none; }
     .toast {
       display: flex; align-items: center; gap: 10px; max-width: min(520px, calc(100vw - 32px)); padding: 9px 10px 9px 14px;
-      border-radius: 10px; background: #1b1d21; color: #f2f2f2; border-left: 3px solid #1d9bd1;
+      border-radius: 10px; background: var(--sut-surface); color: #f2f2f2; border-left: 3px solid var(--sut-accent);
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4); font: 500 13px/1.4 ${FONT}; pointer-events: auto; animation: pop 0.15s ease-out;
     }
-    .toast.success { border-left-color: #2bac76; }
-    .toast.warn { border-left-color: #ecb22e; }
-    .toast.error { border-left-color: #e01e5a; }
+    .toast.success { border-left-color: var(--sut-ok); }
+    .toast.warn { border-left-color: var(--sut-warn); }
+    .toast.error { border-left-color: var(--sut-danger); }
     .toast.leaving { opacity: 0; transition: opacity 0.18s ease; }
-    .toast-action { all: unset; color: #7fd1f5; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .toast-action { all: unset; color: var(--sut-tag); font-weight: 700; cursor: pointer; white-space: nowrap; }
     .toast-action:hover { text-decoration: underline; }
 
     /* ---------- floating launcher ---------- */
     .fab {
       all: unset; position: fixed; right: 10px; top: 50%; transform: translateY(-50%); z-index: 1;
       display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
-      background: rgba(27, 29, 33, 0.85); color: #e9e9ea; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+      background: rgba(27, 29, 33, 0.85); color: var(--sut-text); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
       opacity: 0.45; cursor: pointer; pointer-events: auto; touch-action: none; transition: opacity 0.15s ease, background 0.15s ease;
     }
     .fab:hover, .fab:focus-visible { opacity: 1; }
-    .fab:focus-visible { outline: 2px solid #1d9bd1; outline-offset: 2px; }
-    .fab.active { opacity: 1; background: #1d9bd1; color: #fff; }
+    .fab:focus-visible { outline: 2px solid var(--sut-accent); outline-offset: 2px; }
+    .fab.active { opacity: 1; background: var(--sut-accent); color: #fff; }
     .fab.dragging { cursor: grabbing; opacity: 1; }
 
     @media (prefers-reduced-motion: reduce) {
       .panel, .toast { animation: none; }
       .box.flash { animation: none; }
+    }
+
+    /* Windows High Contrast / Forced Colors: box-shadow rings and background-only states disappear. */
+    @media (forced-colors: active) {
+      input:focus, textarea:focus, select:focus { outline: 2px solid Highlight; outline-offset: 1px; }
+      .segmented button[aria-pressed="true"] { background: Highlight; color: HighlightText; }
+      .segmented button[aria-pressed="true"] .n { color: HighlightText; }
+      .segmented button:disabled, .icon-btn:disabled { color: GrayText; }
+      .box { forced-color-adjust: none; }
     }
   `;
 
@@ -259,30 +280,31 @@
       return pool[index];
     }
 
-    /** Re-reads rects: call on scroll/resize (the inspector throttles it with rAF). */
+    /**
+     * Re-reads rects: call on scroll/resize (the inspector throttles it with rAF).
+     * All layout reads happen first, then all box writes, so the loop never forces a
+     * synchronous layout per element.
+     */
     function refresh() {
       if (!host) return;
-      let used = 0;
+      const items = [];
       if (primary && primary.isConnected) {
         const rect = primary.getBoundingClientRect();
-        if (isOnScreen(rect)) {
-          const node = box(used++);
-          node.className = `box ${primaryKind}`;
-          node.hidden = false;
-          placeBox(node, rect);
-        }
+        if (isOnScreen(rect)) items.push([primaryKind, rect]);
       }
       for (const el of matches) {
-        if (used >= MAX_BOXES) break;
+        if (items.length >= MAX_BOXES) break;
         if (el === primary || !el.isConnected) continue;
         const rect = el.getBoundingClientRect();
-        if (!isOnScreen(rect)) continue;
-        const node = box(used++);
-        node.className = 'box match';
+        if (isOnScreen(rect)) items.push(['match', rect]);
+      }
+      items.forEach(([kind, rect], index) => {
+        const node = box(index);
+        node.className = `box ${kind}`;
         node.hidden = false;
         placeBox(node, rect);
-      }
-      for (let i = used; i < pool.length; i++) pool[i].hidden = true;
+      });
+      for (let i = items.length; i < pool.length; i++) pool[i].hidden = true;
     }
 
     return {
@@ -296,6 +318,14 @@
         mount();
         matches = elements ? Array.from(elements).slice(0, MAX_TRACKED_MATCHES) : [];
         refresh();
+      },
+      /** Sets primary and matches together; refreshes once unless told otherwise. */
+      update({ primary: el = null, kind = 'primary', matches: elements = [] }, refreshNow = true) {
+        mount();
+        primary = el || null;
+        primaryKind = kind;
+        matches = elements ? Array.from(elements).slice(0, MAX_TRACKED_MATCHES) : [];
+        if (refreshNow) refresh();
       },
       refresh,
       clear() {
@@ -383,17 +413,25 @@
       setPosition(left, top);
     }
 
-    function clamp() {
-      if (!node) return;
+    /** Position from the inline style: the rect would include the opening animation's transform. */
+    function currentPosition() {
       const rect = node.getBoundingClientRect();
-      setPosition(rect.left, rect.top);
+      const left = parseFloat(node.style.left);
+      const top = parseFloat(node.style.top);
+      return [Number.isFinite(left) ? left : rect.left, Number.isFinite(top) ? top : rect.top];
     }
 
-    /** Drag the panel by any element marked with data-drag-handle (except its controls). */
+    function clamp() {
+      if (!node) return;
+      const [left, top] = currentPosition();
+      setPosition(left, top);
+    }
+
+    /** Drag the panel by any element marked with data-drag-handle (except its other controls). */
     function startDrag(event) {
       if (event.button !== 0) return;
       const handle = event.target.closest('[data-drag-handle]');
-      if (!handle || event.target.closest('button, input, select, textarea, a, label')) return;
+      if (!handle || event.target.closest('button:not([data-drag-handle]), input, select, textarea, a, label')) return;
       event.preventDefault();
       const rect = node.getBoundingClientRect();
       const dx = event.clientX - rect.left;
@@ -419,17 +457,37 @@
         mount();
         const created = !node;
         if (created) {
-          node = h('div', { class: 'panel', role: 'dialog', 'aria-label': 'Slack UI Tweaker' });
+          node = h('div', { class: 'panel', role: 'dialog', 'aria-label': 'Slack UI Tweaker', tabindex: '-1' });
           node.addEventListener('pointerdown', startDrag);
           layer.panel.append(node);
         }
+        // Re-rendering replaces every control: remember which one had focus (data-focus-key)
+        // and give focus back to its replacement, so keyboard users are not dropped on <body>.
+        const focused = !created && node.contains(shadow.activeElement) ? shadow.activeElement : null;
+        const focusKey = focused ? focused.getAttribute('data-focus-key') : null;
         node.classList.toggle('wide', wide);
         node.replaceChildren(...children.filter(Boolean));
         if (at) placeNear(at.x, at.y);
         else if (created) setPosition(innerWidth - node.getBoundingClientRect().width - 24, 72);
         else clamp();
+        if (focused) {
+          const target =
+            (focusKey && node.querySelector(`[data-focus-key="${CSS.escape(focusKey)}"]:not(:disabled)`)) ||
+            node.querySelector('[data-focus-key]:not(:disabled)') ||
+            node;
+          target.focus({ preventScroll: true });
+        }
       },
       clamp,
+      /** Keyboard movement, through the same clamped positioning as pointer dragging. */
+      moveBy(dx, dy) {
+        if (!node) return;
+        const [left, top] = currentPosition();
+        setPosition(left + dx, top + dy);
+      },
+      hasFocus() {
+        return !!node && !!shadow && node.contains(shadow.activeElement);
+      },
       close() {
         if (node) node.remove();
         node = null;
@@ -439,6 +497,38 @@
       },
     };
   })();
+
+  /**
+   * Arrow keys on the panel grip or on the floating launcher move them.
+   * Called by the inspector's window-level keydown handler, which stops propagation for events
+   * coming from our UI (listeners inside the shadow root never see keydown).
+   * @returns {boolean} true when the event was consumed
+   */
+  function handleKey(event) {
+    if (!shadow || event.altKey || event.ctrlKey || event.metaKey) return false;
+    const focused = shadow.activeElement;
+    if (!focused) return false;
+    const vertical = { ArrowUp: -1, ArrowDown: 1 };
+    const horizontal = { ArrowLeft: -1, ArrowRight: 1 };
+    if (focused.hasAttribute('data-drag-handle') && (event.key in vertical || event.key in horizontal)) {
+      const step = event.shiftKey ? 60 : 15;
+      panel.moveBy((horizontal[event.key] || 0) * step, (vertical[event.key] || 0) * step);
+      event.preventDefault();
+      return true;
+    }
+    if (focused === layer.fab && event.key in vertical) {
+      moveFabBy(vertical[event.key] * (event.shiftKey ? 8 : 2));
+      event.preventDefault();
+      return true;
+    }
+    return false;
+  }
+
+  /** Element that had focus, looking inside our shadow root when focus is in our UI. */
+  function focusedElement() {
+    const active = document.activeElement;
+    return host && active === host ? shadow.activeElement : active;
+  }
 
   /* ------------------------------------------------------------------ toasts */
 
@@ -473,11 +563,32 @@
   /* ------------------------------------------------------------------ floating launcher */
 
   let fabHandlers = { onClick: null, onMove: null };
+  let fabSaveTimer = 0;
+  const FAB_SAVE_DELAY_MS = 400;
+
+  /** Keyboard nudge of the launcher (% of the viewport); persisted once the user stops. */
+  function moveFabBy(deltaPercent) {
+    const fab = layer.fab;
+    if (!fab) return;
+    const current = parseFloat(fab.style.top) || 50;
+    fab.style.top = `${Math.min(95, Math.max(5, current + deltaPercent)).toFixed(1)}%`;
+    fab.classList.add('dragging'); // keeps setFab() from overwriting the position before it is saved
+    clearTimeout(fabSaveTimer);
+    fabSaveTimer = setTimeout(() => {
+      fab.classList.remove('dragging');
+      if (fabHandlers.onMove) fabHandlers.onMove(parseFloat(fab.style.top));
+    }, FAB_SAVE_DELAY_MS);
+  }
 
   function createFab() {
     const fab = h(
       'button',
-      { class: 'fab', type: 'button', title: 'Slack UI Tweaker — Ispettore (Alt+S) · trascina per spostare', 'aria-label': 'Avvia ispettore Slack UI Tweaker' },
+      {
+        class: 'fab',
+        type: 'button',
+        title: 'Slack UI Tweaker — Ispettore (Alt+S) · trascina o usa le frecce su/giù per spostare',
+        'aria-label': 'Avvia ispettore Slack UI Tweaker (frecce su/giù per spostare il pulsante)',
+      },
       icon('target', 16),
     );
     let suppressClick = false;
@@ -543,6 +654,8 @@
     mount,
     isFromUI,
     activeElement,
+    focusedElement,
+    handleKey,
     highlighter,
     flash,
     tooltip,

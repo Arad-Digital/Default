@@ -33,7 +33,9 @@
     rulesByScope: {},
     teamId: detectTeamId(),
     teamName: '',
+    tornDown: false,
   };
+  let workspacePoll = 0;
 
   engine.mount();
   mutations.init({ onToggle: toggleCollapse });
@@ -45,6 +47,7 @@
     updateRule: (id, patch) => storage.updateRule(id, patch),
     removeRule: (id) => storage.removeRule(id),
     onActiveChange: (active) => ui.setFabActive(active),
+    onContextLost: teardown,
   });
   chrome.runtime.onMessage.addListener(onMessage);
   storage.onChange(onStorageChange);
@@ -119,19 +122,18 @@
     return match ? match[1] : null;
   }
 
+  /**
+   * Workspace display name from the page title: "general (Channel) - Acme Inc - Slack".
+   * Deliberately NOT read from Slack's localStorage (localConfig_v2 also holds session tokens).
+   * The middle segments are joined back, so a workspace name containing " - " survives.
+   */
   function readTeamName(teamId) {
     if (!teamId) return '';
-    try {
-      // Slack keeps the list of signed-in workspaces in its own localStorage (same origin).
-      const config = JSON.parse(localStorage.getItem('localConfig_v2') || 'null');
-      const name = config && config.teams && config.teams[teamId] && config.teams[teamId].name;
-      if (typeof name === 'string' && name.trim()) return name.trim();
-    } catch {
-      // Optional source: ignore.
-    }
-    // Title fallback: "general (Channel) - Acme Inc - Slack"
-    const parts = document.title.split(' - ').map((part) => part.trim()).filter(Boolean);
-    return parts.length >= 3 && /slack/i.test(parts[parts.length - 1]) ? parts[parts.length - 2] : '';
+    const parts = document.title
+      .split(' - ')
+      .map((part) => part.trim())
+      .filter((part) => part && !/^\d+\s+(?:new|nuov)/i.test(part)); // "3 new items" counters
+    return parts.length >= 3 && /slack/i.test(parts[parts.length - 1]) ? parts.slice(1, -1).join(' - ') : '';
   }
 
   function updateWorkspaceName(retries) {
@@ -147,19 +149,57 @@
     }
   }
 
-  /** Slack switches workspace without reloading: watch the URL (cheap string comparison). */
+  /**
+   * Slack switches workspace without reloading: watch the URL (cheap string comparison).
+   * The same poll notices when the extension is reloaded, disabled or removed under this page.
+   */
+  function checkWorkspace() {
+    if (!contextAlive()) {
+      teardown();
+      return;
+    }
+    const teamId = detectTeamId();
+    if (teamId === state.teamId) return;
+    state.teamId = teamId;
+    state.teamName = '';
+    applyRules();
+    updateWorkspaceName(NAME_RETRIES);
+  }
+
   function watchWorkspace() {
-    const check = () => {
-      const teamId = detectTeamId();
-      if (teamId === state.teamId) return;
-      state.teamId = teamId;
-      state.teamName = '';
-      applyRules();
-      updateWorkspaceName(NAME_RETRIES);
-    };
-    window.addEventListener('popstate', check);
-    if (window.navigation) window.navigation.addEventListener('navigatesuccess', check);
-    setInterval(check, WORKSPACE_POLL_MS);
+    window.addEventListener('popstate', checkWorkspace);
+    if (window.navigation) window.navigation.addEventListener('navigatesuccess', checkWorkspace);
+    workspacePoll = setInterval(checkWorkspace, WORKSPACE_POLL_MS);
+  }
+
+  /* ------------------------------------------------------------------ orphaned script */
+
+  /** False once the extension has been reloaded, disabled or removed: chrome.* calls would throw. */
+  function contextAlive() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Leaves the page as if the extension were not there: no listeners swallowing Alt+S,
+   * no launcher, no rules. CSS goes before the toggles, so a collapsed block is never left
+   * without the button that reopens it.
+   */
+  function teardown() {
+    if (state.tornDown) return;
+    state.tornDown = true;
+    clearInterval(workspacePoll);
+    window.removeEventListener('popstate', checkWorkspace);
+    if (window.navigation) window.navigation.removeEventListener('navigatesuccess', checkWorkspace);
+    inspector.destroy();
+    engine.clearPreview();
+    engine.render([]);
+    mutations.setRules([]);
+    ui.setFab({ visible: false });
+    ui.toast('Slack UI Tweaker è stato aggiornato o disattivato: ricarica la pagina di Slack.', { tone: 'warn', duration: 8000 });
   }
 
   /* ------------------------------------------------------------------ floating button */
@@ -179,6 +219,14 @@
   /* ------------------------------------------------------------------ messages */
 
   function context() {
+    if (state.teamId && !state.teamName) {
+      // Slack may set its title after the startup retries ran out: try again when asked.
+      const name = readTeamName(state.teamId);
+      if (name) {
+        state.teamName = name;
+        storage.rememberWorkspace(state.teamId, name).catch(warn);
+      }
+    }
     const matchCounts = {};
     for (const rule of storage.rulesForScope(state.rulesByScope, state.teamId)) matchCounts[rule.id] = gen.count(rule.selector);
     return {
