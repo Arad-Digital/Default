@@ -4,7 +4,7 @@
  * Storage layout (chrome.storage.local):
  *   sutSettings   → Settings
  *   sutRules      → { [scope]: Rule[] }  scope = 'global' or a Slack team/enterprise id (T0123…, E0123…)
- *   sutWorkspaces → { [teamId]: { name, lastSeen } }  display names for the popup
+ *   sutWorkspaces → { [teamId]: { name } }  display names for the popup (no timestamps: only what the UI shows)
  *
  * Loaded as a classic script by the content script (isolated world) and by the popup.
  * Every write goes through normalizeRule(), so whatever is stored (or imported) has a known shape.
@@ -54,14 +54,18 @@
    * @property {boolean} showFloatingButton  In-page launcher
    * @property {number} floatingButtonTop    Vertical position of the launcher, % of the viewport
    *
-   * @typedef {Object<string, {name: string, lastSeen: number}>} Workspaces
+   * @typedef {Object} WorkspaceInfo
+   * @property {string} name  Display name read from the page title; may be empty. Older builds also stored a
+   *                          `lastSeen` timestamp: it is dropped on read, on import and on the next write.
+   *
+   * @typedef {Object<string, WorkspaceInfo>} Workspaces  Keyed by Slack team/enterprise id, never 'global'
    *
    * @typedef {Object} ExportedConfig
    * @property {string} format
    * @property {number} version
    * @property {string} exportedAt
    * @property {RulesByScope} rules
-   * @property {Workspaces} workspaces
+   * @property {Workspaces} workspaces  Only the workspaces that are a scope key of `rules`
    */
 
   /** @type {Readonly<Settings>} */
@@ -77,6 +81,7 @@
   const MAX_SELECTOR_LENGTH = 2000;
   const MAX_CSS_LENGTH = 20000;
   const MAX_LABEL_LENGTH = 120;
+  const MAX_NAME_LENGTH = 120;
 
   const area = () => chrome.storage.local;
   const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -190,15 +195,32 @@
     return settings;
   }
 
-  /** @returns {Workspaces} */
+  /** Keeps only `{ name }`: a legacy `lastSeen` (or any other field) is dropped. @returns {Workspaces} */
   function shapeWorkspaces(raw) {
     const out = {};
     if (!isObject(raw)) return out;
     for (const [id, info] of Object.entries(raw)) {
       if (SCOPE_RE.test(id) && id !== GLOBAL && isObject(info)) {
-        out[id] = { name: typeof info.name === 'string' ? info.name.slice(0, 120) : '', lastSeen: Number(info.lastSeen) || 0 };
+        out[id] = { name: typeof info.name === 'string' ? info.name.slice(0, MAX_NAME_LENGTH) : '' };
       }
     }
+    return out;
+  }
+
+  /** True when a stored map still holds fields that shapeWorkspaces() drops, e.g. `lastSeen` from older builds. */
+  function hasLegacyWorkspaceFields(raw) {
+    return isObject(raw) && Object.values(raw).some((info) => isObject(info) && Object.keys(info).some((key) => key !== 'name'));
+  }
+
+  /**
+   * The entries of `workspaces` whose id is in `scopes`, so a backup carries only the names its rules need.
+   * @param {Workspaces} workspaces
+   * @param {Iterable<string>} scopes
+   * @returns {Workspaces}
+   */
+  function pickWorkspaces(workspaces, scopes) {
+    const out = {};
+    for (const id of scopes) if (hasOwn(workspaces, id)) out[id] = workspaces[id];
     return out;
   }
 
@@ -313,17 +335,28 @@
     return shapeWorkspaces(data[KEYS.workspaces]);
   }
 
-  /** Stores the display name of a workspace; writes only when something changed. */
+  // Name last confirmed in storage for each team, per context (tab or popup). Slack's navigations and
+  // title retries ask again and again for the same workspace: once it is known, they cost nothing.
+  /** @type {Map<string, string>} */
+  const rememberedNames = new Map();
+
+  /** Stores the display name of a workspace; writes only when the name is new or has changed. @returns {Promise<void>} */
   function rememberWorkspace(teamId, name) {
     if (!teamId || !SCOPE_RE.test(teamId) || teamId === GLOBAL) return Promise.resolve();
+    const wanted = (name || '').slice(0, MAX_NAME_LENGTH);
+    const known = rememberedNames.get(teamId);
+    if (known !== undefined && (!wanted || wanted === known)) return Promise.resolve();
     return withLock(async () => {
-      const workspaces = await getWorkspaces();
+      const raw = (await area().get(KEYS.workspaces))[KEYS.workspaces];
+      const workspaces = shapeWorkspaces(raw);
       const current = workspaces[teamId];
-      const nextName = (name || current?.name || '').slice(0, 120);
-      const today = new Date().toDateString();
-      if (current && current.name === nextName && new Date(current.lastSeen).toDateString() === today) return;
-      workspaces[teamId] = { name: nextName, lastSeen: Date.now() };
-      await area().set({ [KEYS.workspaces]: workspaces });
+      const nextName = wanted || current?.name || '';
+      // Rewriting the shaped map also clears the timestamps older builds kept next to the name.
+      if (!current || current.name !== nextName || hasLegacyWorkspaceFields(raw)) {
+        workspaces[teamId] = { name: nextName };
+        await area().set({ [KEYS.workspaces]: workspaces });
+      }
+      rememberedNames.set(teamId, nextName);
     });
   }
 
@@ -337,7 +370,9 @@
       version: C.EXPORT_VERSION,
       exportedAt: new Date().toISOString(),
       rules,
-      workspaces,
+      // A backup is meant to be shared: it names only the workspaces its rules belong to, not every
+      // workspace the user has opened. getRulesByScope() already drops scopes without rules.
+      workspaces: pickWorkspaces(workspaces, Object.keys(rules)),
     };
   }
 
@@ -369,6 +404,7 @@
 
     return withLock(async () => {
       const rulesByScope = replace ? {} : await getRulesByScope();
+      const importedScopes = new Set();
       let imported = 0;
       let skipped = 0;
       for (const [raw, scope] of incoming) {
@@ -380,10 +416,13 @@
         const existing = locate(rulesByScope, rule.id);
         if (existing) rulesByScope[existing.scope].splice(existing.index, 1);
         (rulesByScope[rule.scope] = rulesByScope[rule.scope] || []).push(rule);
+        importedScopes.add(rule.scope);
         imported++;
       }
+      // Backups from older builds list every workspace their author had opened: keep only the names of
+      // the workspaces the imported rules belong to. The shaped map written back has no lastSeen.
       const knownWorkspaces = await getWorkspaces();
-      for (const [id, info] of Object.entries(workspaces)) {
+      for (const [id, info] of Object.entries(pickWorkspaces(workspaces, importedScopes))) {
         if (!knownWorkspaces[id] || !knownWorkspaces[id].name) knownWorkspaces[id] = info;
       }
       await saveRules(rulesByScope);

@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "description": "Personalizza Slack Web/PWA con un ispettore punta-e-clicca: nascondi, sfuma, compatta o rendi collassabile qualsiasi elemento.",
   "minimum_chrome_version": "102",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage"],
   "host_permissions": ["https://app.slack.com/*"],
   "background": {
     "service_worker": "background/service-worker.js"
