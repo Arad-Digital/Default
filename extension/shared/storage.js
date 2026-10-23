@@ -339,10 +339,32 @@
   // title retries ask again and again for the same workspace: once it is known, they cost nothing.
   /** @type {Map<string, string>} */
   const rememberedNames = new Map();
+  let watchingRememberedNames = false;
+
+  /**
+   * Other contexts rewrite the whole map (another tab, the PWA, an import), each under its own lock, so
+   * an entry can be dropped or renamed there. Forget names storage no longer holds; put back the ones
+   * that were dropped. A different name is left alone: two contexts that disagree must not keep
+   * overwriting each other.
+   */
+  function watchRememberedNames() {
+    if (watchingRememberedNames) return;
+    watchingRememberedNames = true;
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local' || !changes[KEYS.workspaces]) return;
+      const stored = shapeWorkspaces(changes[KEYS.workspaces].newValue);
+      for (const [teamId, name] of rememberedNames) {
+        if (stored[teamId]?.name === name) continue;
+        rememberedNames.delete(teamId);
+        if (!stored[teamId]) rememberWorkspace(teamId, name).catch(() => {});
+      }
+    });
+  }
 
   /** Stores the display name of a workspace; writes only when the name is new or has changed. @returns {Promise<void>} */
   function rememberWorkspace(teamId, name) {
     if (!teamId || !SCOPE_RE.test(teamId) || teamId === GLOBAL) return Promise.resolve();
+    watchRememberedNames();
     const wanted = (name || '').slice(0, MAX_NAME_LENGTH);
     const known = rememberedNames.get(teamId);
     if (known !== undefined && (!wanted || wanted === known)) return Promise.resolve();
