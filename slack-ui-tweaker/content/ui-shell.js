@@ -205,8 +205,11 @@
     /* Windows High Contrast / Forced Colors: box-shadow rings and background-only states disappear. */
     @media (forced-colors: active) {
       input:focus, textarea:focus, select:focus { outline: 2px solid Highlight; outline-offset: 1px; }
-      .segmented button[aria-pressed="true"] { background: Highlight; color: HighlightText; }
-      .segmented button[aria-pressed="true"] .n { color: HighlightText; }
+      /* Pressed segment: a Highlight border, not a Highlight fill. Chrome paints a Canvas backplate behind
+         text in forced colors, so HighlightText on a Highlight fill would vanish (same fix as popup.css). */
+      .segmented { border: 1px solid CanvasText; }
+      .segmented button { border: 2px solid Canvas; }
+      .segmented button[aria-pressed="true"] { border-color: Highlight; }
       .segmented button:disabled, .icon-btn:disabled { color: GrayText; }
       .box { forced-color-adjust: none; }
     }
