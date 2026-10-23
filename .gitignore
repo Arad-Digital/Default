@@ -1,0 +1,12 @@
+# Packaged builds
+*.zip
+*.crx
+*.pem
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+
+# Tooling
+node_modules/
+.claude/worktrees/

@@ -4,25 +4,27 @@
 
 ## Project Overview
 
-**Repository:** `Arad-Digital/Default`
-**Status:** Early stage — contains the **Slack UI Tweaker** Chrome extension
+**Repository:** `Arad-Digital/slack-ui-tweaker` (moved here from `Arad-Digital/Default`)
+**Status:** Internal tool, distributed unpacked (Chrome Web Store publishing not decided)
 
-The repository currently hosts one project: `slack-ui-tweaker/`, a Manifest V3 Chrome/Edge extension that lets users restyle Slack Web/PWA (`https://app.slack.com/*`) with a point-and-click inspector. Its user documentation (Italian) is in `slack-ui-tweaker/README.md`.
+**Slack UI Tweaker** is a Manifest V3 Chrome/Edge extension that lets users restyle Slack Web/PWA (`https://app.slack.com/*`) with a point-and-click inspector. The extension itself lives in `extension/`; the user documentation (Italian) is `README.md`.
 
 ## Repository Structure
 
 ```
 /
 ├── CLAUDE.md                  # AI assistant context (this file)
-└── slack-ui-tweaker/          # Unpacked MV3 extension (load this folder in chrome://extensions)
+├── README.md                  # User guide (Italian): install, PWA, usage, test plan, architecture
+└── extension/                 # Unpacked MV3 extension: the folder to load in chrome://extensions or zip
     ├── manifest.json
     ├── background/            # Service worker: relays the Alt+S command to the active tab
     ├── content/               # Content scripts (classic scripts, loaded in manifest order)
     ├── popup/                 # Dashboard (action popup + options page)
     ├── shared/                # constants, DOM helpers, chrome.storage helpers
-    ├── icons/                 # icon.svg source + PNG sizes
-    └── README.md              # User guide: install, PWA, usage, test plan
+    └── icons/                 # icon.svg source + PNG sizes
 ```
+
+Keep `extension/` free of anything Chrome does not need (docs, tests, tooling go at the root).
 
 ## Development Setup
 
@@ -35,7 +37,7 @@ The repository currently hosts one project: `slack-ui-tweaker/`, a Manifest V3 C
 ```bash
 git clone <repository-url>
 cd Default
-# chrome://extensions → Developer mode → "Load unpacked" → select slack-ui-tweaker/
+# chrome://extensions → Developer mode → "Load unpacked" → select extension/
 # then reload any open app.slack.com tab
 ```
 
@@ -44,19 +46,26 @@ cd Default
 | Command | Description |
 |---------|-------------|
 | `git status` | Check working tree status |
-| `for f in $(find slack-ui-tweaker -name '*.js'); do node --check "$f"; done` | Syntax check |
+| `find extension -name '*.js' -exec node --check {} \;` | Syntax check |
 | _(none)_ | Build — not needed |
-| _(TBD)_ | Automated tests — none committed yet; see the manual test plan in `slack-ui-tweaker/README.md` |
+| _(TBD)_ | Automated tests — none committed yet; see the manual test plan in `README.md` |
 | _(TBD)_ | Lint / Format — no config committed |
 
 ## Architecture
 
-### slack-ui-tweaker
+### extension/
 
 - **No bundler / no ES modules**: MV3 content scripts can't be modules, so every file is a classic script that registers itself on `globalThis.SUT` (`SUT.constants`, `SUT.dom`, `SUT.storage`, `SUT.selectorGenerator`, `SUT.styleEngine`, `SUT.domMutations`, `SUT.ui`, `SUT.inspector`). Load order matters and is declared in `manifest.json` → `content_scripts[0].js`. `shared/constants.js` must stay DOM-free (the service worker `importScripts` it).
 - **Data flow**: popup/inspector write `chrome.storage.local` (`sutSettings`, `sutRules` grouped by scope `global`/team id, `sutWorkspaces`) → `content.js` listens to `storage.onChanged` → `style-engine.js` rewrites the single `<style id="slack-ui-tweaker-styles">`; `dom-mutations.js` injects ▸/▾ toggles for `collapse` rules.
-- **Invariants**: every write goes through `normalizeRule()` (`shared/storage.js`); every rule's CSS goes through `sanitizeCss()` (re-serialized by the browser parser, remote `url()` stripped); in-page UI lives in a Shadow DOM host and is built with `SUT.dom.h()` — never `innerHTML`; nodes injected into Slack's DOM carry `data-sut-ui`, which generated CSS excludes.
-- **Performance**: no page listeners while the inspector is off (except one keydown for Alt+S); the body MutationObserver exists only while a collapse rule is active.
+- **Invariants**:
+  - every write goes through `normalizeRule()` (`shared/storage.js`); workspaces store only `{ name }` and backups export only workspaces that have rules;
+  - every rule's CSS goes through `sanitizeCss()`, which **fails closed**: allowlisted rule types only, declarations that could fetch anything are dropped unless every URL is `data:` (or `#id` in filter/mask/clip-path/marker/fill/stroke). URLs are tokenized/parsed, never regex-matched; same-origin URLs are dropped too. Any new CSS feature must keep that property;
+  - in-page UI lives in a Shadow DOM host and is built with `SUT.dom.h()` — never `innerHTML`; nodes injected into Slack's DOM carry `data-sut-ui`, which generated CSS excludes;
+  - the extension never reads Slack's `localStorage` (it holds session tokens): the workspace name comes from `document.title`;
+  - when `chrome.runtime.id` disappears (extension reloaded/disabled), `content.js` `teardown()` removes rules, toggles, launcher and listeners.
+- **Accessibility conventions**: panel controls carry `data-focus-key` so `ui.panel.show()` can restore focus after re-renders; editor fields use `field(text, control, ...descriptions)` (explicit `<label for>`, hints via `aria-describedby`, never interactive content inside the label); keyboard handling for our UI lives in the inspector's window-level `onKeyDown` (listeners inside the shadow root never receive keydown) — see `ui.handleKey()`; forced-colors states use borders/outlines with system colors, not Highlight fills (Chrome paints a Canvas backplate behind text).
+- **Performance**: no page listeners while the inspector is off (except one keydown for Alt+S); the body MutationObserver exists only while a collapse rule is active and caps its backlog while the page is hidden; the highlighter batches reads before writes; the selector generator memoizes document queries per public call (`withMemo`).
+- **Reference guidance**: the Google Chrome "Modern Web Guidance" plugin (skills `chrome-extensions` and `modern-web-guidance`) is the reference for MV3 and web-platform choices; consult it before adding UI or extension APIs.
 
 ## Coding Conventions
 
@@ -92,12 +101,13 @@ _(To be documented when CI/CD pipelines are configured)_
 | File | Purpose |
 |------|---------|
 | `CLAUDE.md` | AI assistant context and project guide |
-| `slack-ui-tweaker/manifest.json` | Permissions, content script order, Alt+S command |
-| `slack-ui-tweaker/shared/storage.js` | Data model (JSDoc) and all chrome.storage access |
-| `slack-ui-tweaker/content/selector-generator.js` | Stable-selector heuristics for Slack's DOM |
-| `slack-ui-tweaker/content/style-engine.js` | Rule → CSS generation and sanitization |
-| `slack-ui-tweaker/content/inspector.js` | Point-and-click inspector, menu and editor |
-| `slack-ui-tweaker/README.md` | User guide (Italian) |
+| `README.md` | User guide (Italian) |
+| `extension/manifest.json` | Permissions (`storage` + host `app.slack.com`), content script order, Alt+S command |
+| `extension/shared/storage.js` | Data model (JSDoc) and all chrome.storage access |
+| `extension/content/selector-generator.js` | Stable-selector heuristics for Slack's DOM |
+| `extension/content/style-engine.js` | Rule → CSS generation and fail-closed sanitization |
+| `extension/content/inspector.js` | Point-and-click inspector, menu and editor |
+| `extension/content/ui-shell.js` | Shadow DOM host: highlights, panel, toasts, launcher, keyboard movement |
 
 ## Notes for AI Assistants
 
