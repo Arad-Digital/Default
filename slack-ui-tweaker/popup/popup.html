@@ -2,6 +2,7 @@
 <html lang="it">
   <head>
     <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Slack UI Tweaker</title>
     <link rel="stylesheet" href="popup.css" />
@@ -20,7 +21,7 @@
         </label>
       </header>
 
-      <div id="notice" class="notice" role="status" hidden></div>
+      <div id="notice" class="notice" hidden></div>
 
       <section class="primary">
         <button id="start-inspector" class="btn btn-primary btn-block" type="button">
@@ -36,7 +37,7 @@
 
       <section class="rules" aria-labelledby="rules-title">
         <div class="section-head">
-          <h2 id="rules-title">Regole <span id="rule-count" class="count">0</span></h2>
+          <h2 id="rules-title" tabindex="-1">Regole <span id="rule-count" class="count">0</span></h2>
           <div class="segmented" role="group" aria-label="Filtro regole">
             <button type="button" data-filter="current" aria-pressed="true">Vista corrente</button>
             <button type="button" data-filter="all" aria-pressed="false">Tutte</button>
@@ -64,6 +65,9 @@
           <button id="open-tab" class="btn-link" type="button"><span data-icon="external"></span>Apri in una scheda</button>
         </div>
       </footer>
+
+      <!-- The page's single polite live region: flash messages, import hint and delete confirmation are spoken here. -->
+      <div id="announcer" class="visually-hidden" role="status"></div>
     </div>
 
     <script src="../shared/constants.js"></script>

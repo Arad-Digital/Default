@@ -15,7 +15,19 @@
   --warn: #b7791f;
   --ok: #007a5a;
   --code: #7c3a7d;
+  /* Translucent tints/outlines of the semantic hues (badges, chips, notices); dark values below. */
+  --danger-tint: rgba(224, 30, 90, 0.12);
+  --danger-line: rgba(224, 30, 90, 0.45);
+  --ok-tint: rgba(43, 172, 118, 0.14);
+  --ok-line: rgba(43, 172, 118, 0.45);
+  --warn-tint: rgba(236, 178, 46, 0.16);
+  --warn-line: rgba(236, 178, 46, 0.5);
+  --focus-tint: rgba(29, 155, 209, 0.15);
+  --code-tint: rgba(124, 58, 125, 0.15);
+  --muted-tint: rgba(127, 127, 127, 0.16);
+  --track: rgba(127, 127, 127, 0.45);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-raised: 0 10px 30px rgba(0, 0, 0, 0.08);
   --radius: 10px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -35,6 +47,11 @@
     --warn: #ecb22e;
     --ok: #4fd1a0;
     --code: #e7a6e8;
+    --danger-tint: rgba(255, 107, 152, 0.14);
+    --danger-line: rgba(255, 107, 152, 0.45);
+    --ok-tint: rgba(79, 209, 160, 0.14);
+    --ok-line: rgba(79, 209, 160, 0.45);
+    --code-tint: rgba(231, 166, 232, 0.15);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   }
 }
@@ -47,20 +64,23 @@
   display: none !important;
 }
 
+/* No font-size on html: text sizes are rem, so they follow the browser's default font size. */
 html,
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.45 var(--font);
 }
 
 body {
-  width: 400px;
+  width: 25rem;
+  max-width: 800px; /* Chrome's popup width limit */
+  font: 0.8125rem/1.45 var(--font);
 }
 
 body.in-page {
   width: auto;
+  max-width: none;
   min-height: 100vh;
   background: var(--surface);
 }
@@ -72,7 +92,15 @@ body.in-page .app {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--bg);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-raised);
+}
+
+/* Popup only: Chrome caps the popup at 600px tall. Keep the whole app within that, so the header,
+   notice and footer stay visible and the rule list is the only scroller (vh is circular in a popup). */
+body:not(.in-page) .app {
+  display: flex;
+  flex-direction: column;
+  max-height: 600px;
 }
 
 svg {
@@ -87,6 +115,18 @@ button {
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
 }
 
 /* ---------- header ---------- */
@@ -111,18 +151,16 @@ button {
 
 .title h1 {
   margin: 0;
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
 .subtitle {
   margin: 1px 0 0;
-  overflow: hidden;
   color: rgba(255, 255, 255, 0.78);
-  font-size: 12px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 /* ---------- switch ---------- */
@@ -148,7 +186,7 @@ button {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: rgba(127, 127, 127, 0.45);
+  background: var(--track);
   transition: background 0.15s ease;
   pointer-events: none;
 }
@@ -207,22 +245,22 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 
 .notice.warn {
-  border-color: rgba(236, 178, 46, 0.5);
-  background: rgba(236, 178, 46, 0.12);
+  border-color: var(--warn-line);
+  background: var(--warn-tint);
 }
 
 .notice.error {
-  border-color: rgba(224, 30, 90, 0.45);
-  background: rgba(224, 30, 90, 0.1);
+  border-color: var(--danger-line);
+  background: var(--danger-tint);
 }
 
 .notice.success {
-  border-color: rgba(43, 172, 118, 0.45);
-  background: rgba(43, 172, 118, 0.12);
+  border-color: var(--ok-line);
+  background: var(--ok-tint);
 }
 
 .notice .notice-text {
@@ -231,7 +269,7 @@ button {
 
 .notice .btn {
   padding: 4px 9px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 /* ---------- buttons ---------- */
@@ -263,7 +301,7 @@ button {
   padding: 10px 14px;
   background: var(--primary);
   color: #fff;
-  font-size: 14px;
+  font-size: 0.875rem;
   box-shadow: var(--shadow);
 }
 
@@ -277,7 +315,7 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 5px;
   background: rgba(255, 255, 255, 0.12);
-  font: 600 11px/1.5 var(--mono);
+  font: 600 0.6875rem/1.5 var(--mono);
 }
 
 .btn-ghost {
@@ -290,6 +328,13 @@ button {
   background: var(--surface-2);
 }
 
+/* Import controls the popup sent the user to (dashboard opened with #import). */
+.btn.is-requested {
+  border-color: var(--focus);
+  background: var(--focus-tint);
+  box-shadow: 0 0 0 3px var(--focus-tint);
+}
+
 .btn-link {
   display: inline-flex;
   align-items: center;
@@ -298,7 +343,7 @@ button {
   border: 0;
   background: none;
   color: var(--focus);
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
 }
 
@@ -311,7 +356,7 @@ button {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   cursor: pointer;
   user-select: none;
 }
@@ -322,7 +367,7 @@ button {
 }
 
 .check.small {
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 
 /* ---------- primary section ---------- */
@@ -338,6 +383,13 @@ button {
   padding: 12px 14px 4px;
 }
 
+body:not(.in-page) .rules {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .section-head {
   display: flex;
   align-items: center;
@@ -351,7 +403,7 @@ button {
   align-items: center;
   gap: 6px;
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
 }
 
@@ -361,7 +413,7 @@ button {
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -380,7 +432,7 @@ button {
   border-radius: 5px;
   background: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
 }
 
@@ -399,15 +451,19 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
-  max-height: 330px;
   margin: 0;
   padding: 0 0 8px;
-  overflow-y: auto;
   list-style: none;
 }
 
-body.in-page .rule-list {
-  max-height: none;
+body:not(.in-page) .rule-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+/* With very large text the fixed parts can fill the popup: keep at least about one rule visible. */
+body:not(.in-page) .rule-list:not(:empty) {
+  min-height: 6rem;
 }
 
 .group {
@@ -416,7 +472,7 @@ body.in-page .rule-list {
   gap: 6px;
   margin-top: 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -429,16 +485,16 @@ body.in-page .rule-list {
 .group .tag {
   padding: 0 6px;
   border-radius: 999px;
-  background: rgba(43, 172, 118, 0.16);
+  background: var(--ok-tint);
   color: var(--ok);
-  font-size: 10px;
+  font-size: 0.625rem;
   letter-spacing: 0;
   text-transform: none;
 }
 
 .group .id {
   color: var(--muted);
-  font: 500 10.5px/1 var(--mono);
+  font: 500 0.65625rem/1 var(--mono);
   letter-spacing: 0;
   text-transform: none;
   opacity: 0.75;
@@ -482,7 +538,7 @@ body.in-page .rule-list {
   margin-top: 4px;
   overflow: hidden;
   color: var(--code);
-  font: 11.5px/1.4 var(--mono);
+  font: 0.71875rem/1.4 var(--mono);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -502,22 +558,22 @@ body.in-page .rule-list {
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   white-space: nowrap;
 }
 
 .chip.ok {
-  background: rgba(43, 172, 118, 0.14);
+  background: var(--ok-tint);
   color: var(--ok);
 }
 
 .chip.warn {
-  background: rgba(236, 178, 46, 0.16);
+  background: var(--warn-tint);
   color: var(--warn);
 }
 
 .chip.err {
-  background: rgba(224, 30, 90, 0.12);
+  background: var(--danger-tint);
   color: var(--danger);
 }
 
@@ -528,37 +584,37 @@ body.in-page .rule-list {
   flex: none;
   padding: 2px 7px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
 }
 
 .badge-hide {
-  background: rgba(224, 30, 90, 0.13);
+  background: var(--danger-tint);
   color: var(--danger);
 }
 
 .badge-hover {
-  background: rgba(29, 155, 209, 0.15);
+  background: var(--focus-tint);
   color: var(--focus);
 }
 
 .badge-fade {
-  background: rgba(127, 127, 127, 0.16);
+  background: var(--muted-tint);
   color: var(--muted);
 }
 
 .badge-compact {
-  background: rgba(43, 172, 118, 0.15);
+  background: var(--ok-tint);
   color: var(--ok);
 }
 
 .badge-collapse {
-  background: rgba(236, 178, 46, 0.17);
+  background: var(--warn-tint);
   color: var(--warn);
 }
 
 .badge-custom {
-  background: rgba(124, 58, 125, 0.15);
+  background: var(--code-tint);
   color: var(--code);
 }
 
@@ -575,11 +631,12 @@ body.in-page .rule-list {
   gap: 2px;
 }
 
+/* min-* rather than width/height, so larger text can grow the target ("Elimina?") but not shrink it. */
 .icon-btn {
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -600,14 +657,13 @@ body.in-page .rule-list {
 
 .icon-btn.danger:hover:not(:disabled),
 .icon-btn.confirm {
-  background: rgba(224, 30, 90, 0.12);
+  background: var(--danger-tint);
   color: var(--danger);
 }
 
 .icon-btn.confirm {
-  width: auto;
   padding: 0 8px;
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   font-weight: 700;
 }
 
@@ -646,5 +702,73 @@ body.in-page .rule-list {
   .slider,
   .slider::after {
     transition: none;
+  }
+}
+
+/* Forced colors (Windows High Contrast) replace author colors with system ones and drop box-shadow, so
+   every shape and state that relied on a tint or a shadow gets a border or a system color here. */
+@media (forced-colors: active) {
+  /* Switch: bordered track and a solid knob; on = Highlight track. The knob position also shows the state. */
+  .slider {
+    border: 1px solid CanvasText;
+  }
+
+  .slider::after {
+    top: 2px;
+    left: 2px;
+    box-sizing: border-box;
+    border: 1px solid CanvasText;
+    background: CanvasText;
+  }
+
+  .switch input:checked + .slider,
+  .header .switch input:checked + .slider {
+    border-color: Highlight;
+    background: Highlight;
+  }
+
+  .switch input:checked + .slider::after {
+    border-color: HighlightText;
+    background: HighlightText;
+  }
+
+  .segmented {
+    border: 1px solid CanvasText;
+  }
+
+  /* Pressed segment: a Highlight border, not a Highlight fill. Chrome paints a Canvas backplate behind
+     text in forced colors, so HighlightText on a Highlight fill would vanish. The Canvas border on the
+     other segments keeps their size equal. */
+  .segmented button {
+    border: 2px solid Canvas;
+  }
+
+  .segmented button[aria-pressed="true"] {
+    border-color: Highlight;
+  }
+
+  .segmented button:disabled {
+    color: GrayText;
+  }
+
+  .badge,
+  .chip,
+  .count,
+  .group .tag {
+    border: 1px solid CanvasText;
+  }
+
+  .icon-btn.confirm {
+    border: 1px solid ButtonText;
+  }
+
+  .btn.is-requested {
+    border-color: Highlight;
+  }
+
+  /* Outlines survive forced colors; pin the ring to a system color that differs from Highlight states. */
+  :focus-visible,
+  .switch input:focus-visible + .slider {
+    outline-color: CanvasText;
   }
 }
