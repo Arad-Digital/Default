@@ -33,6 +33,8 @@
     rulesByScope: {},
     teamId: detectTeamId(),
     teamName: '',
+    /** Name of the workspace we just left: right after an SPA switch the title still shows it. */
+    previousTeamName: '',
     tornDown: false,
   };
   let workspacePoll = 0;
@@ -125,7 +127,8 @@
   /**
    * Workspace display name from the page title: "general (Channel) - Acme Inc - Slack".
    * Deliberately NOT read from Slack's localStorage (localConfig_v2 also holds session tokens).
-   * The middle segments are joined back, so a workspace name containing " - " survives.
+   * The view name may itself contain " - " (canvases, DMs): anchor on its "(Channel)"-style tag
+   * when there is one, otherwise take the segment before "Slack".
    */
   function readTeamName(teamId) {
     if (!teamId) return '';
@@ -133,13 +136,22 @@
       .split(' - ')
       .map((part) => part.trim())
       .filter((part) => part && !/^\d+\s+(?:new|nuov)/i.test(part)); // "3 new items" counters
-    return parts.length >= 3 && /slack/i.test(parts[parts.length - 1]) ? parts.slice(1, -1).join(' - ') : '';
+    if (parts.length < 3 || !/slack/i.test(parts[parts.length - 1])) return '';
+    const tagged = parts.findIndex((part) => /\([^()]+\)$/.test(part));
+    const start = tagged >= 0 && tagged < parts.length - 2 ? tagged + 1 : parts.length - 2;
+    return parts.slice(start, -1).join(' - ');
+  }
+
+  /** Name for the current team, ignoring a title that still names the workspace we just left. */
+  function freshTeamName() {
+    const name = readTeamName(state.teamId);
+    return name && name === state.previousTeamName ? '' : name;
   }
 
   function updateWorkspaceName(retries) {
     const teamId = state.teamId;
     if (!teamId) return;
-    const name = readTeamName(teamId);
+    const name = freshTeamName();
     if (name) state.teamName = name;
     storage.rememberWorkspace(teamId, name).catch(warn);
     if (!name && retries > 0) {
@@ -161,6 +173,7 @@
     const teamId = detectTeamId();
     if (teamId === state.teamId) return;
     state.teamId = teamId;
+    state.previousTeamName = state.teamName;
     state.teamName = '';
     applyRules();
     updateWorkspaceName(NAME_RETRIES);
@@ -221,7 +234,7 @@
   function context() {
     if (state.teamId && !state.teamName) {
       // Slack may set its title after the startup retries ran out: try again when asked.
-      const name = readTeamName(state.teamId);
+      const name = freshTeamName();
       if (name) {
         state.teamName = name;
         storage.rememberWorkspace(state.teamId, name).catch(warn);
