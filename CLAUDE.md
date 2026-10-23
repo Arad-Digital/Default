@@ -35,8 +35,8 @@ Keep `extension/` free of anything Chrome does not need (docs, tests, tooling go
 ### Getting Started
 
 ```bash
-git clone <repository-url>
-cd Default
+git clone https://github.com/Arad-Digital/slack-ui-tweaker.git
+cd slack-ui-tweaker
 # chrome://extensions → Developer mode → "Load unpacked" → select extension/
 # then reload any open app.slack.com tab
 ```
@@ -46,7 +46,7 @@ cd Default
 | Command | Description |
 |---------|-------------|
 | `git status` | Check working tree status |
-| `find extension -name '*.js' -exec node --check {} \;` | Syntax check |
+| `find extension -name '*.js' -print0 \| xargs -0 -n1 node --check` | Syntax check (exits non-zero if any file fails) |
 | _(none)_ | Build — not needed |
 | _(TBD)_ | Automated tests — none committed yet; see the manual test plan in `README.md` |
 | _(TBD)_ | Lint / Format — no config committed |
@@ -64,7 +64,7 @@ cd Default
   - the extension never reads Slack's `localStorage` (it holds session tokens): the workspace name comes from `document.title`;
   - when `chrome.runtime.id` disappears (extension reloaded/disabled), `content.js` `teardown()` removes rules, toggles, launcher and listeners.
 - **Accessibility conventions**: panel controls carry `data-focus-key` so `ui.panel.show()` can restore focus after re-renders; editor fields use `field(text, control, ...descriptions)` (explicit `<label for>`, hints via `aria-describedby`, never interactive content inside the label); keyboard handling for our UI lives in the inspector's window-level `onKeyDown` (listeners inside the shadow root never receive keydown) — see `ui.handleKey()`; forced-colors states use borders/outlines with system colors, not Highlight fills (Chrome paints a Canvas backplate behind text).
-- **Performance**: no page listeners while the inspector is off (except one keydown for Alt+S); the body MutationObserver exists only while a collapse rule is active and caps its backlog while the page is hidden; the highlighter batches reads before writes; the selector generator memoizes document queries per public call (`withMemo`).
+- **Performance**: pointer, mouse and scroll listeners exist only while the inspector is on. Always installed: the window keydown (Alt+S) and the inspector's keyboard/clipboard/focus isolation listeners, which return at once while it is off (same-target capture listeners run in registration order, so they must be registered at document_start, before Slack's), plus `content.js`'s `popstate`/`navigatesuccess` listeners and its 1.5 s interval, which only compare the team id in the URL. The body MutationObserver exists only while a collapse rule is active and caps its backlog while the page is hidden; the highlighter batches reads before writes; the selector generator memoizes document queries per public call (`withMemo`).
 - **Reference guidance**: the Google Chrome "Modern Web Guidance" plugin (skills `chrome-extensions` and `modern-web-guidance`) is the reference for MV3 and web-platform choices; consult it before adding UI or extension APIs.
 
 ## Coding Conventions
